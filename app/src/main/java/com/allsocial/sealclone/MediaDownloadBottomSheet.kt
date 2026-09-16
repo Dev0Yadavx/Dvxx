@@ -2,6 +2,7 @@ package com.allsocial.sealclone
 
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -56,6 +57,18 @@ fun DownloadOptionsSheet(
 
     val isDownloading = activeTask != null
     val progressFloat = ((activeTask?.progress ?: 0f) / 100f).coerceIn(0f, 1f)
+
+    data class QualityChoice(
+        val label: String,
+        val isAudio: Boolean,
+        val height: Int? = null,
+        val bitrate: String? = null,
+        val sizeEstimate: String = ""
+    )
+
+    var selectedChoice by remember {
+        mutableStateOf(QualityChoice(label = "1080p Full HD", isAudio = false, height = 1080, sizeEstimate = "~85 MB"))
+    }
 
     fun onStartDownload(
         targetUrl: String,
@@ -137,124 +150,220 @@ fun DownloadOptionsSheet(
             }
         }
 
-        // 1. WATCH / PLAY BUTTON (YouTube App par jane ke bajaye in-app chalega)
-        OutlinedButton(
-            onClick = {
-                scope.launch {
-                    Toast.makeText(context, "Extracting player stream...", Toast.LENGTH_SHORT).show()
-                    val streamUrl = DownloaderEngine.extractDirectStreamUrl(video.url)
-                    onPlayStream(streamUrl)
-                    onDismissRequest()
-                }
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("btn_watch_stream"),
-            shape = RoundedCornerShape(50),
-            colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = MaterialTheme.colorScheme.primary
-            )
-        ) {
-            Icon(Icons.Default.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Watch In-App Preview", color = MaterialTheme.colorScheme.onSurface)
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        // 2. MP3 AUDIO BUTTONS (320, 192, 64)
+        // ================= AUDIO SECTION =================
         Text(
-            "Audio Qualities (MP3)",
+            text = "Audio Qualities (MP3 with Cover & Tags)",
             color = MaterialTheme.colorScheme.primary,
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold
         )
+
+        val audioQualities = listOf(
+            Triple("320K", "320 kbps", "~9.5 MB"),
+            Triple("192K", "192 kbps", "~5.8 MB"),
+            Triple("64K", "64 kbps", "~2.1 MB")
+        )
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            listOf("320K", "192K", "64K").forEach { bitrate ->
+            audioQualities.forEach { (qualityKey, label, sizeEst) ->
+                val isSelected = selectedChoice.isAudio && selectedChoice.bitrate == qualityKey
                 Button(
                     onClick = {
-                        onStartDownload(video.url, null, true, bitrate, video.title, video.thumbnail)
-                        onDismissRequest()
+                        selectedChoice = QualityChoice(
+                            label = "$label MP3",
+                            isAudio = true,
+                            bitrate = qualityKey,
+                            sizeEstimate = sizeEst
+                        )
                     },
                     modifier = Modifier
                         .weight(1f)
-                        .testTag("btn_audio_$bitrate"),
-                    shape = RoundedCornerShape(50),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                    contentPadding = PaddingValues(vertical = 4.dp)
+                        .testTag("btn_audio_$qualityKey"),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer
+                    ),
+                    contentPadding = PaddingValues(vertical = 8.dp, horizontal = 4.dp)
                 ) {
-                    Text(
-                        bitrate.replace("K", " kbps"),
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (isSelected) {
+                                Icon(
+                                    Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Spacer(modifier = Modifier.width(2.dp))
+                            }
+                            Text(
+                                text = label,
+                                fontSize = 11.5.sp,
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = sizeEst,
+                            fontSize = 10.sp,
+                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f),
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
             }
         }
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // 3. VIDEO BUTTONS (360p, 720p, 1080p, 2K, 4K)
+        // ================= VIDEO SECTION =================
         Text(
-            "Video Qualities (MP4)",
+            text = "Video Qualities (MP4)",
             color = MaterialTheme.colorScheme.primary,
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold
         )
+
         val videoQualities = listOf(
-            "360p SD" to 360,
-            "720p HD" to 720,
-            "1080p Full HD" to 1080,
-            "2K Quad HD" to 1440,
-            "4K Ultra HD" to 2160
+            Triple("4K Ultra HD (2160p)", 2160, "~350 MB"),
+            Triple("2K Quad HD (1440p)", 1440, "~180 MB"),
+            Triple("1080p Full HD", 1080, "~85 MB"),
+            Triple("720p HD", 720, "~42 MB"),
+            Triple("360p SD", 360, "~18 MB")
         )
 
         Column(modifier = Modifier.padding(vertical = 4.dp)) {
-            videoQualities.forEach { (label, height) ->
+            videoQualities.forEach { (title, height, sizeEst) ->
+                val isSelected = !selectedChoice.isAudio && selectedChoice.height == height
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 3.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(horizontal = 14.dp, vertical = 6.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                            else MaterialTheme.colorScheme.surfaceVariant
+                        )
+                        .clickable {
+                            selectedChoice = QualityChoice(
+                                label = title,
+                                isAudio = false,
+                                height = height,
+                                sizeEstimate = sizeEst
+                            )
+                        }
+                        .padding(horizontal = 12.dp, vertical = 7.dp)
                         .testTag("video_quality_row_$height"),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        label,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Button(
-                        onClick = {
-                            onStartDownload(video.url, height, false, null, video.title, video.thumbnail)
-                            onDismissRequest()
-                        },
-                        shape = RoundedCornerShape(50),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp),
-                        modifier = Modifier.testTag("btn_video_save_$height")
-                    ) {
-                        Icon(
-                            Icons.Default.Download,
-                            contentDescription = null,
-                            tint = Color.Black,
-                            modifier = Modifier.size(14.dp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (isSelected) {
+                            Icon(
+                                Icons.Default.Check,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+                        Text(
+                            text = title,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Save", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+                            modifier = Modifier.padding(end = 8.dp)
+                        ) {
+                            Text(
+                                text = sizeEst,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+
+                        Button(
+                            onClick = {
+                                selectedChoice = QualityChoice(
+                                    label = title,
+                                    isAudio = false,
+                                    height = height,
+                                    sizeEstimate = sizeEst
+                                )
+                                onStartDownload(video.url, height, false, null, video.title, video.thumbnail)
+                                onDismissRequest()
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+                            modifier = Modifier.testTag("btn_video_save_$height")
+                        ) {
+                            Icon(
+                                Icons.Default.Download,
+                                contentDescription = null,
+                                tint = Color.Black,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Save", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // ================= DOWNLOAD NOW BUTTON =================
+        Button(
+            onClick = {
+                onStartDownload(
+                    video.url,
+                    selectedChoice.height,
+                    selectedChoice.isAudio,
+                    selectedChoice.bitrate,
+                    video.title,
+                    video.thumbnail
+                )
+                onDismissRequest()
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp)
+                .testTag("btn_download_now_bottom_sheet"),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            )
+        ) {
+            Icon(
+                Icons.Default.Download,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Download Now (${selectedChoice.label} • ${selectedChoice.sizeEstimate})",
+                color = MaterialTheme.colorScheme.onPrimary,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
 
         if (isDownloading) {

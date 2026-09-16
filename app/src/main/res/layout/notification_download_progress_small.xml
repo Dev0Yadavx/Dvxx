@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="10dp"
+    android:background="#1E293B">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:src="@drawable/ic_notification_download"
+            android:contentDescription="Download" />
+
+        <TextView
+            android:id="@+id/notification_title_small"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="6dp"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:text="Downloading Media" />
+
+        <TextView
+            android:id="@+id/notification_percent_small"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#00ADB5"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:text="0%" />
+    </LinearLayout>
+
+    <ProgressBar
+        android:id="@+id/notification_progress_bar_small"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="6dp"
+        android:layout_marginTop="8dp"
+        android:max="100"
+        android:progress="0"
+        android:progressDrawable="@drawable/custom_progress_bar" />
+</LinearLayout>

@@ -35,8 +35,17 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+        </activity>
 
-            <!-- Direct Share Sheet Handler -->
+        <!-- Direct Share Popup Dialog (Downloads without opening the app) -->
+        <activity
+            android:name=".QuickDownloadActivity"
+            android:exported="true"
+            android:theme="@style/Theme.TransparentDialog"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:windowSoftInputMode="adjustResize"
+            android:label="Quick Download">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />

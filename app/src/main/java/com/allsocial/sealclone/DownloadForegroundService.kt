@@ -252,20 +252,40 @@ class DownloadForegroundService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val progressInt = progress.toInt().coerceIn(0, 100)
         val isIndeterminate = progress <= 0f || progress > 100f
+        val cleanStatus = statusText.ifBlank { "Downloading..." }
+
+        // Custom notification RemoteViews with progress bar and percent
+        val remoteViewsSmall = android.widget.RemoteViews(packageName, R.layout.notification_download_progress_small).apply {
+            setTextViewText(R.id.notification_title_small, title)
+            setTextViewText(R.id.notification_percent_small, if (isIndeterminate) "..." else "$progressInt%")
+            setProgressBar(R.id.notification_progress_bar_small, 100, progressInt, isIndeterminate)
+        }
+
+        val remoteViewsBig = android.widget.RemoteViews(packageName, R.layout.notification_download_progress).apply {
+            setTextViewText(R.id.notification_title, title)
+            setTextViewText(R.id.notification_percent, if (isIndeterminate) "..." else "$progressInt%")
+            setTextViewText(R.id.notification_status, cleanStatus)
+            setProgressBar(R.id.notification_progress_bar, 100, progressInt, isIndeterminate)
+            setOnClickPendingIntent(R.id.notification_cancel, cancelPendingIntent)
+        }
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setSmallIcon(R.drawable.ic_notification_download)
             .setContentTitle(title)
-            .setContentText(statusText.ifBlank { "Downloading..." })
+            .setContentText(cleanStatus)
             .setContentIntent(contentPendingIntent)
-            .setProgress(100, progress.toInt().coerceIn(0, 100), isIndeterminate)
+            .setCustomContentView(remoteViewsSmall)
+            .setCustomBigContentView(remoteViewsBig)
+            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
+            .setProgress(100, progressInt, isIndeterminate)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .addAction(
-                android.R.drawable.ic_menu_close_clear_cancel,
+                R.drawable.ic_notification_cancel,
                 "Cancel",
                 cancelPendingIntent
             )

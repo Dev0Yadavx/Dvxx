@@ -277,58 +277,16 @@ object DownloaderBridge {
         onProgress: (Float, String) -> Unit
     ): File = withContext(Dispatchers.IO) {
         ensureInit(context)
-        val validUrl = fixUrl(targetUrl)
-        val downloadDir = getDownloadDir(context)
-        val existingFiles = downloadDir.listFiles()?.toSet() ?: emptySet()
-        val outPattern = "${downloadDir.absolutePath}/%(title).100B.%(ext)s"
-
-        val request = YoutubeDLRequest(validUrl).apply {
-            addOption("--no-warnings")
-            addOption("--no-check-certificate")
-            addOption("--prefer-free-formats")
-            addOption("--extractor-args", "youtube:player_client=ios,android")
-            if (isAudioOnly) {
-                addOption("-x")
-                addOption("--audio-format", "mp3")
-                addOption("--audio-quality", audioBitrate ?: "320K")
-                addOption("-f", "bestaudio/best")
-            } else {
-                val res = formatSpec.toIntOrNull()
-                if (res != null) {
-                    addOption("-f", "bestvideo[height<=$res]+bestaudio/best[height<=$res]/best")
-                } else if (formatSpec.isNotBlank()) {
-                    addOption("-f", "$formatSpec+bestaudio/bestvideo+bestaudio/best[ext=mp4]/best")
-                } else {
-                    addOption("-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best")
-                }
-                addOption("--merge-output-format", "mp4")
-            }
-            addOption("-o", outPattern)
-            addOption("--no-mtime")
-        }
-
-        YoutubeDL.getInstance().execute(request, processId) { p, _, line ->
-            onProgress(p, line ?: "")
-        }
-
-        val allFiles = downloadDir.listFiles()?.toSet() ?: emptySet()
-        val newlyCreated = allFiles - existingFiles
-        val targetFile = newlyCreated.maxByOrNull { it.lastModified() }
-            ?: downloadDir.listFiles()?.maxByOrNull { it.lastModified() }
-            ?: File(downloadDir, "media.mp4")
-
-        try {
-            android.media.MediaScannerConnection.scanFile(
-                context,
-                arrayOf(targetFile.absolutePath),
-                arrayOf(if (isAudioOnly) "audio/mpeg" else "video/mp4"),
-                null
-            )
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
-        targetFile
+        val res = formatSpec.toIntOrNull()
+        DownloaderEngine.startDownload(
+            context = context,
+            targetUrl = targetUrl,
+            resolutionHeight = res,
+            isAudio = isAudioOnly,
+            audioBitrate = audioBitrate,
+            processId = processId,
+            onProgress = onProgress
+        )
     }
 }
 
@@ -536,111 +494,6 @@ fun HomeSearchScreen(
     var searchResults by remember { mutableStateOf<List<SearchItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     var playingUrl by remember { mutableStateOf<String?>(null) }
-    var showUpdateDialog by remember { mutableStateOf(false) }
-    var isUpdatingEngine by remember { mutableStateOf(false) }
-    var currentYtDlpVersion by remember { mutableStateOf("Checking...") }
-    var showColorPresetsSheet by remember { mutableStateOf(false) }
-
-    // Screen load hote hi safe init
-    LaunchedEffect(Unit) {
-        val ver = EngineInitState.getOrFetchVersion(context)
-        currentYtDlpVersion = ver
-    }
-
-    // Update Dialog with "Update Now" button
-    if (showUpdateDialog) {
-        AlertDialog(
-            onDismissRequest = { if (!isUpdatingEngine) showUpdateDialog = false },
-            title = {
-                Text(
-                    text = "yt-dlp Engine Update",
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            },
-            text = {
-                Column {
-                    Text(
-                        text = "Current Version: $currentYtDlpVersion",
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Update yt-dlp config engine to latest version to fix broken extractors and bot detection limits.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp
-                    )
-                    if (isUpdatingEngine) {
-                        Spacer(modifier = Modifier.height(14.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                "Updating engine binaries...",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        isUpdatingEngine = true
-                        scope.launch(Dispatchers.IO) {
-                            try {
-                                val isReady = EngineInitState.ensureInitialized(context)
-                                if (!isReady) {
-                                    throw IllegalStateException("Failed to load native binaries.")
-                                }
-
-                                // Update execute karein
-                                val status = YoutubeDL.getInstance().updateYoutubeDL(context.applicationContext)
-                                val newVer = EngineInitState.getOrFetchVersion(context, forceRefresh = true)
-                                EngineInitState.setUpdatedVersion(newVer)
-                                
-                                withContext(Dispatchers.Main) {
-                                    currentYtDlpVersion = newVer
-                                    isUpdatingEngine = false
-                                    showUpdateDialog = false
-                                    Toast.makeText(context, "Engine Updated to $newVer", Toast.LENGTH_SHORT).show()
-                                }
-                            } catch (e: Exception) {
-                                withContext(Dispatchers.Main) {
-                                    isUpdatingEngine = false
-                                    Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
-                                }
-                            }
-                        }
-                    },
-                    shape = RoundedCornerShape(50),
-                    enabled = !isUpdatingEngine,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00ADB5))
-                ) {
-                    Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Update Now", color = Color.Black, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showUpdateDialog = false },
-                    enabled = !isUpdatingEngine
-                ) {
-                    Text("Close", color = Color.Gray)
-                }
-            },
-            containerColor = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(20.dp)
-        )
-    }
 
     LaunchedEffect(incomingUrl) {
         if (incomingUrl.isNotBlank()) {
@@ -675,43 +528,6 @@ fun HomeSearchScreen(
                 color = MaterialTheme.colorScheme.primary
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // Update Config Button
-                FilledTonalButton(
-                    onClick = { showUpdateDialog = true },
-                    shape = RoundedCornerShape(50),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                    colors = ButtonDefaults.filledTonalButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                    modifier = Modifier.testTag("btn_update_config")
-                ) {
-                    Icon(
-                        Icons.Default.Refresh,
-                        contentDescription = "Update Config",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(15.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        "Update Config",
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(4.dp))
-
-                // Color Presets & Theme Palette Button
-                IconButton(
-                    onClick = { showColorPresetsSheet = true },
-                    modifier = Modifier.testTag("btn_theme_palette")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Palette,
-                        contentDescription = "Theme and Color Presets",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-
                 val isDarkMode by vm.isDarkMode.collectAsState()
                 IconButton(
                     onClick = { vm.toggleDarkMode() },
@@ -758,98 +574,153 @@ fun HomeSearchScreen(
             }
         }
 
-        // Small Style Search URL Box
-        SmallSearchUrlBox(
-            value = searchInput,
-            onValueChange = { searchInput = it },
-            onSearch = {
-                if (searchInput.isNotBlank()) {
-                    keyboardController?.hide() // Keyboard band karein
-                    isLoading = true
-                    scope.launch {
-                        searchResults = DownloaderEngine.searchOrFetch(searchInput.trim())
-                        isLoading = false
-                        if (searchResults.isEmpty()) {
-                            Toast.makeText(context, "No results found", Toast.LENGTH_SHORT).show()
-                        }
+        // When search results are present: HIDE search box and platforms bar for full clean view!
+        if (searchResults.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    onClick = { searchResults = emptyList() },
+                    modifier = Modifier.testTag("btn_back_to_search")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "Back to search",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "New Search",
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
                     }
                 }
-            },
-            onPaste = {
-                clipboard.getText()?.let { clipData ->
-                    val raw = clipData.text.toString().trim()
-                    val urlRegex = Regex("""(https?://[^\s]+)""")
-                    val fullUrl = urlRegex.find(raw)?.value ?: raw
-                    searchInput = fullUrl
 
-                    // Auto trigger search on paste
-                    if (fullUrl.isNotBlank()) {
-                        keyboardController?.hide()
-                        isLoading = true
-                        scope.launch {
-                            searchResults = DownloaderEngine.searchOrFetch(fullUrl)
-                            isLoading = false
-                        }
-                    }
-                }
-            },
-            onClear = { searchInput = "" }
-        )
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // All Social Media Platform Icons (niche all social media icon add)
-        SocialMediaPlatformsBar(
-            onPlatformClick = { platform ->
-                val clipData = clipboard.getText()?.text?.toString()?.trim() ?: ""
-                val urlRegex = Regex("""(https?://[^\s]+)""")
-                val detectedUrl = urlRegex.find(clipData)?.value ?: ""
-                if (detectedUrl.isNotBlank() && platform.domainKeywords.any { detectedUrl.contains(it, ignoreCase = true) }) {
-                    searchInput = detectedUrl
-                    keyboardController?.hide()
-                    Toast.makeText(context, "Pasted ${platform.name} link!", Toast.LENGTH_SHORT).show()
-                    isLoading = true
-                    scope.launch {
-                        searchResults = DownloaderEngine.searchOrFetch(detectedUrl)
-                        isLoading = false
-                    }
-                } else if (detectedUrl.isNotBlank()) {
-                    searchInput = detectedUrl
-                    keyboardController?.hide()
-                    Toast.makeText(context, "Pasted link from clipboard!", Toast.LENGTH_SHORT).show()
-                    isLoading = true
-                    scope.launch {
-                        searchResults = DownloaderEngine.searchOrFetch(detectedUrl)
-                        isLoading = false
-                    }
-                } else {
-                    Toast.makeText(context, "${platform.name}: ${platform.sampleTip}", Toast.LENGTH_LONG).show()
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.testTag("search_results_count_badge")
+                ) {
+                    Text(
+                        text = "${searchResults.size} Results",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                    )
                 }
             }
-        )
+        } else {
+            // Search URL box thoda niche karo (comfortable spacing)
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Small Style Search URL Box
+            SmallSearchUrlBox(
+                value = searchInput,
+                onValueChange = { searchInput = it },
+                onSearch = {
+                    if (searchInput.isNotBlank()) {
+                        keyboardController?.hide() // Keyboard band karein
+                        isLoading = true
+                        scope.launch {
+                            searchResults = DownloaderEngine.searchOrFetch(searchInput.trim())
+                            isLoading = false
+                            if (searchResults.isEmpty()) {
+                                Toast.makeText(context, "No results found", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                },
+                onPaste = {
+                    clipboard.getText()?.let { clipData ->
+                        val raw = clipData.text.toString().trim()
+                        val urlRegex = Regex("""(https?://[^\s]+)""")
+                        val fullUrl = urlRegex.find(raw)?.value ?: raw
+                        searchInput = fullUrl
+
+                        // Auto trigger search on paste
+                        if (fullUrl.isNotBlank()) {
+                            keyboardController?.hide()
+                            isLoading = true
+                            scope.launch {
+                                searchResults = DownloaderEngine.searchOrFetch(fullUrl)
+                                isLoading = false
+                            }
+                        }
+                    }
+                },
+                onClear = { searchInput = "" }
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // All Social Media Platform Icons
+            SocialMediaPlatformsBar(
+                onPlatformClick = { platform ->
+                    val clipData = clipboard.getText()?.text?.toString()?.trim() ?: ""
+                    val urlRegex = Regex("""(https?://[^\s]+)""")
+                    val detectedUrl = urlRegex.find(clipData)?.value ?: ""
+                    if (detectedUrl.isNotBlank() && platform.domainKeywords.any { detectedUrl.contains(it, ignoreCase = true) }) {
+                        searchInput = detectedUrl
+                        keyboardController?.hide()
+                        Toast.makeText(context, "Pasted ${platform.name} link!", Toast.LENGTH_SHORT).show()
+                        isLoading = true
+                        scope.launch {
+                            searchResults = DownloaderEngine.searchOrFetch(detectedUrl)
+                            isLoading = false
+                        }
+                    } else if (detectedUrl.isNotBlank()) {
+                        searchInput = detectedUrl
+                        keyboardController?.hide()
+                        Toast.makeText(context, "Pasted link from clipboard!", Toast.LENGTH_SHORT).show()
+                        isLoading = true
+                        scope.launch {
+                            searchResults = DownloaderEngine.searchOrFetch(detectedUrl)
+                            isLoading = false
+                        }
+                    } else {
+                        Toast.makeText(context, "${platform.name}: ${platform.sampleTip}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            )
+        }
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // In-App Player Card
+        // In-App Player (Full render, no extra border)
         AnimatedVisibility(visible = playingUrl != null) {
             playingUrl?.let { playStream ->
-                Card(
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(220.dp)
-                        .padding(bottom = 12.dp),
-                    shape = RoundedCornerShape(16.dp)
+                        .aspectRatio(16f / 9f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color.Black)
+                        .padding(bottom = 6.dp)
+                        .testTag("in_app_stream_player")
                 ) {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        StreamPlayer(url = playStream)
-                        IconButton(
-                            onClick = { playingUrl = null },
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(4.dp)
-                        ) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
-                        }
+                    StreamPlayer(url = playStream)
+                    IconButton(
+                        onClick = { playingUrl = null },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(6.dp)
+                            .background(Color.Black.copy(alpha = 0.65f), CircleShape)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Close player", tint = Color.White)
                     }
                 }
             }
@@ -866,79 +737,178 @@ fun HomeSearchScreen(
             }
         }
 
-        // Full scrollable 10 Results List
+        // Full scrollable Results List with YouTube Thumbnail Size & Down Download Button
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f), // Isse list keyboard ke upar smooth scroll hogi
+                .weight(1f),
             contentPadding = PaddingValues(top = 8.dp, bottom = 80.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             items(searchResults) { item ->
-                Row(
+                Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.surface)
-                        .clickable { vm.openBottomSheet(item) }
-                        .padding(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .clip(RoundedCornerShape(14.dp))
+                        .testTag("yt_card_${item.id}"),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
-                    Box(modifier = Modifier.size(110.dp, 68.dp).clip(RoundedCornerShape(12.dp))) {
-                        AsyncImage(
-                            model = item.thumbnail,
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
-                        Text(
-                            text = item.duration,
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        // YouTube Thumbnail Size (16:9 Aspect Ratio) with Tap to Direct Play
+                        Box(
                             modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(4.dp)
-                                .background(Color.Black.copy(0.75f), RoundedCornerShape(4.dp))
-                                .padding(horizontal = 4.dp, vertical = 1.dp),
-                            color = Color.White,
-                            fontSize = 10.sp
-                        )
-                    }
+                                .fillMaxWidth()
+                                .aspectRatio(16f / 9f)
+                                .background(Color(0xFF181818))
+                                .clickable {
+                                    scope.launch {
+                                        val stream = DownloaderEngine.extractDirectStreamUrl(item.url)
+                                        playingUrl = stream
+                                    }
+                                }
+                        ) {
+                            if (item.thumbnail.isNotBlank()) {
+                                AsyncImage(
+                                    model = item.thumbnail,
+                                    contentDescription = item.title,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
 
-                    Spacer(modifier = Modifier.width(12.dp))
+                            // Center Play Button Overlay
+                            Box(
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .background(Color.Black.copy(alpha = 0.65f), CircleShape)
+                                    .align(Alignment.Center),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow,
+                                    contentDescription = "Tap to direct play",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(34.dp)
+                                )
+                            }
 
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = item.title,
-                            color = Color.White,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = item.uploader,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontSize = 11.sp
-                        )
-                    }
+                            // Bottom-Left "Tap to direct play" hint badge
+                            Row(
+                                modifier = Modifier
+                                    .align(Alignment.BottomStart)
+                                    .padding(8.dp)
+                                    .background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Tap to direct play",
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
 
-                    IconButton(
-                        onClick = { vm.openBottomSheet(item) },
-                        modifier = Modifier.testTag("btn_item_download_${item.id}")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = "Open download options",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
+                            // Bottom-Right Duration Badge
+                            if (item.duration.isNotBlank()) {
+                                Text(
+                                    text = item.duration,
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(8.dp)
+                                        .background(Color.Black.copy(alpha = 0.85f), RoundedCornerShape(6.dp))
+                                        .padding(horizontal = 7.dp, vertical = 3.dp),
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        // Title & Metadata Section
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 10.dp)
+                        ) {
+                            Text(
+                                text = item.title,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = item.uploader.ifBlank { "YouTube / Media" },
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                if (item.duration.isNotBlank()) {
+                                    Text(
+                                        text = "•",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 12.sp
+                                    )
+                                    Text(
+                                        text = item.duration,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // Down me Download Button -> Tap to open Quality option (Square shape)
+                            Button(
+                                onClick = { vm.openBottomSheet(item) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(44.dp)
+                                    .testTag("btn_item_download_${item.id}"),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Download,
+                                    contentDescription = "Open Quality Options",
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Choose Quality & Download",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.5.sp,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            }
+                        }
                     }
                 }
             }
-        }
-
-        if (searchResults.isEmpty() && !isLoading && playingUrl == null) {
-            Spacer(modifier = Modifier.height(8.dp))
-            SocialMediaCapabilitiesCard()
         }
     }
 
@@ -966,23 +936,6 @@ fun HomeSearchScreen(
                 onStartDownload(url, formatSelector, false, resolution, title, thumb)
             },
             vm = vm
-        )
-    }
-
-    // Color Presets & Dynamic Theme Bottom Sheet
-    if (showColorPresetsSheet) {
-        val useDynamicColor by vm.useDynamicColor.collectAsState()
-        val colorPresetId by vm.colorPreset.collectAsState()
-        val isDarkMode by vm.isDarkMode.collectAsState()
-
-        ColorPresetsSheet(
-            currentPresetId = colorPresetId,
-            useDynamicColor = useDynamicColor,
-            isDark = isDarkMode,
-            onSelectPreset = { vm.setColorPreset(it) },
-            onToggleDynamicColor = { vm.setUseDynamicColor(it) },
-            onToggleDarkMode = { vm.setDarkMode(it) },
-            onDismissRequest = { showColorPresetsSheet = false }
         )
     }
 }
@@ -1234,8 +1187,10 @@ fun SettingsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val isDarkMode by vm.isDarkMode.collectAsState()
-    val useDynamicColor by vm.useDynamicColor.collectAsState()
-    val colorPresetId by vm.colorPreset.collectAsState()
+
+    var versionCode by remember { mutableStateOf(EngineInitState.cachedVersion) }
+    var isUpdatingEngineInSettings by remember { mutableStateOf(false) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -1249,407 +1204,252 @@ fun SettingsScreen(
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(bottom = 16.dp)
+            modifier = Modifier.padding(bottom = 20.dp)
         )
 
-        // Appearance / Theme Section Card
-        Text(
-            text = "Appearance",
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-
+        // 1. Dark / Light Toggle Card with Rounded Background & Icon
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 16.dp)
-                .testTag("theme_settings_card"),
+                .testTag("settings_theme_card"),
             shape = RoundedCornerShape(18.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                // Quick Toggle Row with Switch
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { vm.toggleDarkMode() }
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceVariant),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = if (isDarkMode) Icons.Default.DarkMode else Icons.Default.LightMode,
-                                contentDescription = "Theme Icon",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Column {
-                            Text(
-                                text = "Dark Mode",
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = if (isDarkMode) "Dark theme enabled" else "Light theme enabled",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    Switch(
-                        checked = isDarkMode,
-                        onCheckedChange = { vm.setDarkMode(it) },
-                        modifier = Modifier.testTag("theme_switch"),
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.Black,
-                            checkedTrackColor = MaterialTheme.colorScheme.primary,
-                            uncheckedThumbColor = MaterialTheme.colorScheme.outline,
-                            uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant
-                        )
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Theme Mode Selector Option Cards
-                Text(
-                    text = "Theme Preference",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 10.dp)
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // Light Theme Option
-                    OutlinedCard(
-                        onClick = { vm.setDarkMode(false) },
+                    Box(
                         modifier = Modifier
-                            .weight(1f)
-                            .testTag("theme_option_light"),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = CardDefaults.outlinedCardColors(
-                            containerColor = if (!isDarkMode) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                            else MaterialTheme.colorScheme.surface
-                        ),
-                        border = BorderStroke(
-                            width = if (!isDarkMode) 2.dp else 1.dp,
-                            color = if (!isDarkMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
-                        )
+                            .size(42.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.LightMode,
-                                contentDescription = "Light Mode",
-                                tint = if (!isDarkMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Light",
-                                fontSize = 13.sp,
-                                fontWeight = if (!isDarkMode) FontWeight.Bold else FontWeight.Medium,
-                                color = if (!isDarkMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-
-                    // Dark Theme Option
-                    OutlinedCard(
-                        onClick = { vm.setDarkMode(true) },
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("theme_option_dark"),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = CardDefaults.outlinedCardColors(
-                            containerColor = if (isDarkMode) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                            else MaterialTheme.colorScheme.surface
-                        ),
-                        border = BorderStroke(
-                            width = if (isDarkMode) 2.dp else 1.dp,
-                            color = if (isDarkMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
-                        )
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.DarkMode,
-                                contentDescription = "Dark Mode",
-                                tint = if (isDarkMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Dark",
-                                fontSize = 13.sp,
-                                fontWeight = if (isDarkMode) FontWeight.Bold else FontWeight.Medium,
-                                color = if (isDarkMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                }
-
-                // Dynamic Color Option
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 12.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Dynamic Color (Material You)",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) "Derives palette from Android wallpaper" else "Requires Android 12+",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = useDynamicColor,
-                            onCheckedChange = { vm.setUseDynamicColor(it) },
-                            modifier = Modifier.testTag("settings_switch_dynamic_color")
+                        Icon(
+                            imageVector = if (isDarkMode) Icons.Default.DarkMode else Icons.Default.LightMode,
+                            contentDescription = if (isDarkMode) "Dark Mode" else "Light Mode",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Text(
-                    text = "Accent Color Presets",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("settings_color_presets_row")
-                ) {
-                    items(ColorPresetRegistry.presets) { preset ->
-                        val isSelected = !useDynamicColor && colorPresetId.equals(preset.id, ignoreCase = true)
-                        Surface(
-                            onClick = {
-                                vm.setUseDynamicColor(false)
-                                vm.setColorPreset(preset.id)
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (isSelected) preset.previewColor.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                            border = BorderStroke(
-                                width = if (isSelected) 2.dp else 1.dp,
-                                color = if (isSelected) preset.previewColor else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                            ),
-                            modifier = Modifier.testTag("settings_preset_${preset.id.lowercase()}")
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(16.dp)
-                                        .clip(CircleShape)
-                                        .background(preset.previewColor),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (isSelected) {
-                                        Icon(
-                                            Icons.Default.Check,
-                                            contentDescription = null,
-                                            tint = Color.Black,
-                                            modifier = Modifier.size(11.dp)
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    preset.name,
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Downloader Preferences Section
-        Text(
-            text = "Downloader Preferences",
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 16.dp),
-            shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                SettingsInfoRow(title = "Download Location", subtitle = "App Scoped Storage / Downloads")
-                Spacer(modifier = Modifier.height(12.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
-                Spacer(modifier = Modifier.height(12.dp))
-                SettingsInfoRow(title = "Aria2c Multi-connection", subtitle = "Enabled (Fast segmented downloading)")
-                Spacer(modifier = Modifier.height(12.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
-                Spacer(modifier = Modifier.height(12.dp))
-                SettingsInfoRow(title = "Audio Extraction Quality", subtitle = "MP3 (320kbps High fidelity)")
-            }
-        }
-
-        // About Section
-        Text(
-            text = "About & Core Engine",
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-
-        var ytdlpVersion by remember { mutableStateOf("Checking...") }
-        var isUpdatingEngineInSettings by remember { mutableStateOf(false) }
-
-        LaunchedEffect(Unit) {
-            val ver = EngineInitState.getOrFetchVersion(context)
-            ytdlpVersion = ver
-        }
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                SettingsInfoRow(title = "App Version", subtitle = "1.0.0 (Release Build)")
-                Spacer(modifier = Modifier.height(12.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
-                Spacer(modifier = Modifier.height(12.dp))
-                SettingsInfoRow(title = "Core Binaries", subtitle = "yt-dlp ($ytdlpVersion) • FFmpeg • Aria2c")
-                Spacer(modifier = Modifier.height(12.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
+                    Spacer(modifier = Modifier.width(14.dp))
+                    Column {
                         Text(
-                            text = "yt-dlp Engine Update",
-                            fontSize = 14.sp,
+                            text = if (isDarkMode) "Dark Theme" else "Light Theme",
+                            fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "Download latest extractors to bypass bot verification",
+                            text = if (isDarkMode) "Dark appearance enabled" else "Light appearance enabled",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Button(
-                        onClick = {
-                            isUpdatingEngineInSettings = true
-                            scope.launch(Dispatchers.IO) {
-                                try {
-                                    val isReady = EngineInitState.ensureInitialized(context)
-                                    if (!isReady) {
-                                        throw IllegalStateException("Failed to load native binaries.")
-                                    }
-                                    val status = YoutubeDL.getInstance().updateYoutubeDL(context.applicationContext)
-                                    val newVer = EngineInitState.getOrFetchVersion(context, forceRefresh = true)
-                                    EngineInitState.setUpdatedVersion(newVer)
-                                    withContext(Dispatchers.Main) {
-                                        ytdlpVersion = newVer
-                                        isUpdatingEngineInSettings = false
-                                        Toast.makeText(context, "Engine Updated to $newVer", Toast.LENGTH_SHORT).show()
-                                    }
-                                } catch (e: Exception) {
-                                    withContext(Dispatchers.Main) {
-                                        isUpdatingEngineInSettings = false
-                                        Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
-                                    }
-                                }
-                            }
-                        },
-                        shape = RoundedCornerShape(50),
-                        enabled = !isUpdatingEngineInSettings,
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                        modifier = Modifier.testTag("btn_settings_update_ytdlp")
+                }
+                Switch(
+                    checked = isDarkMode,
+                    onCheckedChange = { vm.setDarkMode(it) },
+                    modifier = Modifier.testTag("settings_switch_dark_mode")
+                )
+            }
+        }
+
+        // 2. Update Config Card with Rounded Background & Icon
+        Card(
+            onClick = { showUpdateDialog = true },
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("settings_update_config_card"),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                        contentAlignment = Alignment.Center
                     ) {
-                        if (isUpdatingEngineInSettings) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                        } else {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Update", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Update Config",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp)
+                        )
                     }
+                    Spacer(modifier = Modifier.width(14.dp))
+                    Column {
+                        Text(
+                            text = "Update Config",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Version: $versionCode",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Button(
+                    onClick = { showUpdateDialog = true },
+                    shape = RoundedCornerShape(50),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                    modifier = Modifier.testTag("btn_settings_update_config")
+                ) {
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Update", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
+    }
+
+    // Dialog: "update under dialog text X Server Update now Ok Update button no ytdlp text show any area and only version code Show"
+    if (showUpdateDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!isUpdatingEngineInSettings) showUpdateDialog = false },
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Server Update",
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 18.sp
+                    )
+                    IconButton(
+                        onClick = { if (!isUpdatingEngineInSettings) showUpdateDialog = false },
+                        modifier = Modifier.size(28.dp).testTag("btn_close_update_dialog")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "Version: $versionCode",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Update server configuration to the latest release for optimal stability and performance.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 13.sp
+                    )
+                    if (isUpdatingEngineInSettings) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                "Updating server configuration...",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        isUpdatingEngineInSettings = true
+                        scope.launch(Dispatchers.IO) {
+                            try {
+                                val isReady = EngineInitState.ensureInitialized(context)
+                                if (!isReady) {
+                                    throw IllegalStateException("Failed to initialize server.")
+                                }
+                                YoutubeDL.getInstance().updateYoutubeDL(context.applicationContext)
+                                val newVer = EngineInitState.getOrFetchVersion(context, forceRefresh = true)
+                                EngineInitState.setUpdatedVersion(newVer)
+                                withContext(Dispatchers.Main) {
+                                    versionCode = newVer
+                                    isUpdatingEngineInSettings = false
+                                    showUpdateDialog = false
+                                    Toast.makeText(context, "Server Updated to $newVer", Toast.LENGTH_SHORT).show()
+                                }
+                            } catch (e: Exception) {
+                                withContext(Dispatchers.Main) {
+                                    isUpdatingEngineInSettings = false
+                                    Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    },
+                    shape = RoundedCornerShape(50),
+                    enabled = !isUpdatingEngineInSettings,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.testTag("btn_confirm_server_update")
+                ) {
+                    if (isUpdatingEngineInSettings) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    } else {
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Update Now", fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showUpdateDialog = false },
+                    enabled = !isUpdatingEngineInSettings,
+                    modifier = Modifier.testTag("btn_dismiss_update_dialog")
+                ) {
+                    Text("Close", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(20.dp)
+        )
     }
 }
 

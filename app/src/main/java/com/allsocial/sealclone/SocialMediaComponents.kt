@@ -229,39 +229,28 @@ fun SocialMediaPlatformsBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("social_media_platforms_row"),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
         ) {
             items(SocialPlatformRegistry.platforms) { platform ->
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = platform.brandColor,
+                    tonalElevation = 4.dp,
+                    shadowElevation = 2.dp,
                     modifier = Modifier
+                        .size(56.dp)
                         .clickable { onPlatformClick(platform) }
                         .testTag("social_platform_${platform.id}")
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = platform.brandColor,
-                        tonalElevation = 4.dp,
-                        shadowElevation = 2.dp,
-                        modifier = Modifier.size(64.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                            Text(
-                                text = platform.shortName,
-                                color = Color.White,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.ExtraBold
-                            )
-                        }
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        Text(
+                            text = platform.shortName,
+                            color = Color.White,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
                     }
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = platform.name,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
                 }
             }
         }

@@ -20,16 +20,25 @@ object MediaStoreHelper {
      */
     fun scanDownloadDirectory(context: Context) {
         try {
-            val dir = DownloaderBridge.getDownloadDir(context)
-            val files = dir.listFiles { f ->
-                f.isFile && (f.name.endsWith(".mp4", ignoreCase = true) ||
-                        f.name.endsWith(".mkv", ignoreCase = true) ||
-                        f.name.endsWith(".webm", ignoreCase = true) ||
-                        f.name.endsWith(".mp3", ignoreCase = true) ||
-                        f.name.endsWith(".m4a", ignoreCase = true) ||
-                        f.name.endsWith(".opus", ignoreCase = true) ||
-                        f.name.endsWith(".ogg", ignoreCase = true))
-            } ?: emptyArray()
+            val musicDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MUSIC)
+            val moviesDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MOVIES)
+            val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+            val appDir = DownloaderBridge.getDownloadDir(context)
+
+            val allDirs = listOf(musicDir, moviesDir, downloadsDir, appDir)
+            val files = allDirs.flatMap { dir ->
+                if (dir.exists()) {
+                    dir.listFiles { f ->
+                        f.isFile && (f.name.endsWith(".mp4", ignoreCase = true) ||
+                                f.name.endsWith(".mkv", ignoreCase = true) ||
+                                f.name.endsWith(".webm", ignoreCase = true) ||
+                                f.name.endsWith(".mp3", ignoreCase = true) ||
+                                f.name.endsWith(".m4a", ignoreCase = true) ||
+                                f.name.endsWith(".opus", ignoreCase = true) ||
+                                f.name.endsWith(".ogg", ignoreCase = true))
+                    }?.toList() ?: emptyList()
+                } else emptyList()
+            }
 
             if (files.isNotEmpty()) {
                 val paths = files.map { it.absolutePath }.toTypedArray()
@@ -259,20 +268,29 @@ object MediaStoreHelper {
             }
         }
 
-        // 4. Merge any finished media from the app's scoped downloads directory that MediaScanner hasn't finished indexing
+        // 4. Merge any finished media from Music, Movies, Downloads and scoped directories that MediaScanner hasn't finished indexing
         try {
-            val downloadDir = DownloaderBridge.getDownloadDir(context)
-            val localFiles = downloadDir.listFiles { file ->
-                file.isFile && (
-                        file.name.endsWith(".mp4", ignoreCase = true) ||
-                        file.name.endsWith(".mkv", ignoreCase = true) ||
-                        file.name.endsWith(".webm", ignoreCase = true) ||
-                        file.name.endsWith(".mp3", ignoreCase = true) ||
-                        file.name.endsWith(".m4a", ignoreCase = true) ||
-                        file.name.endsWith(".opus", ignoreCase = true) ||
-                        file.name.endsWith(".ogg", ignoreCase = true)
-                )
-            } ?: emptyArray()
+            val musicDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MUSIC)
+            val moviesDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MOVIES)
+            val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+            val appDir = DownloaderBridge.getDownloadDir(context)
+            val allDirs = listOf(musicDir, moviesDir, downloadsDir, appDir)
+
+            val localFiles = allDirs.flatMap { dir ->
+                if (dir.exists()) {
+                    dir.listFiles { file ->
+                        file.isFile && (
+                                file.name.endsWith(".mp4", ignoreCase = true) ||
+                                file.name.endsWith(".mkv", ignoreCase = true) ||
+                                file.name.endsWith(".webm", ignoreCase = true) ||
+                                file.name.endsWith(".mp3", ignoreCase = true) ||
+                                file.name.endsWith(".m4a", ignoreCase = true) ||
+                                file.name.endsWith(".opus", ignoreCase = true) ||
+                                file.name.endsWith(".ogg", ignoreCase = true)
+                        )
+                    }?.toList() ?: emptyList()
+                } else emptyList()
+            }
 
             for (file in localFiles) {
                 if (!seenPaths.contains(file.absolutePath)) {

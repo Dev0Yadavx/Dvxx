@@ -2,7 +2,6 @@ package com.allsocial.sealclone
 
 import android.content.Context
 import android.util.Log
-import com.yausername.aria2c.Aria2c
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import kotlinx.coroutines.Dispatchers
@@ -21,36 +20,46 @@ object EngineInitState {
     var cachedVersion: String = "2025.01.26"
         private set
 
+    @Volatile
+    var appContext: Context? = null
+
     private val initLock = Any()
 
-    fun ensureInitialized(context: Context): Boolean {
+    fun setApplicationContext(context: Context) {
+        if (appContext == null) {
+            appContext = context.applicationContext
+        }
+    }
+
+    fun ensureInitialized(context: Context? = null): Boolean {
         if (isInitialized) return true
+        val ctx = context?.applicationContext ?: appContext ?: return false
+        setApplicationContext(ctx)
         synchronized(initLock) {
             if (isInitialized) return true
             return try {
-                val appCtx = context.applicationContext
-                YoutubeDL.getInstance().init(appCtx)
-                FFmpeg.getInstance().init(appCtx)
-                Aria2c.getInstance().init(appCtx)
+                YoutubeDL.getInstance().init(ctx)
+                FFmpeg.getInstance().init(ctx)
                 isInitialized = true
                 Log.d("EngineInitState", "Native binaries successfully initialized")
                 true
             } catch (e: Exception) {
-                Log.e("EngineInitState", "Failed to initialize native binaries", e)
+                Log.e("EngineInitState", "Failed to initialize native binaries: ${e.message}")
                 false
             }
         }
     }
 
-    suspend fun getOrFetchVersion(context: Context, forceRefresh: Boolean = false): String = withContext(Dispatchers.IO) {
-        if (!ensureInitialized(context)) {
-            return@withContext "Init Failed"
+    suspend fun getOrFetchVersion(context: Context? = null, forceRefresh: Boolean = false): String = withContext(Dispatchers.IO) {
+        if (!forceRefresh && cachedVersion.isNotBlank()) {
+            return@withContext cachedVersion
         }
-        if (!forceRefresh && cachedVersion != "2025.01.26" && cachedVersion.isNotBlank()) {
+        val ctx = context?.applicationContext ?: appContext
+        if (ctx == null || !ensureInitialized(ctx)) {
             return@withContext cachedVersion
         }
         return@withContext try {
-            val fetched = YoutubeDL.getInstance().version(context.applicationContext)
+            val fetched = YoutubeDL.getInstance().version(ctx)
             if (!fetched.isNullOrBlank()) {
                 cachedVersion = fetched
             }
