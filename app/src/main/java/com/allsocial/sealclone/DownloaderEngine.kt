@@ -161,38 +161,39 @@ object DownloaderEngine {
         val validUrl = fixUrl(targetUrl)
         EngineInitState.ensureInitialized(context)
 
-        // Android Public Standard Directory
-        val downloadDir = if (isAudio) {
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
-        } else {
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
-        }
+        // 1. Android 11, 12, 13, 14 safe directory (Always use Download)
+        val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
         if (!downloadDir.exists()) downloadDir.mkdirs()
 
-        val fileTemplate = "${downloadDir.absolutePath}/%(title)s.%(ext)s"
+        // 2. Temp cache dir for thumbnails and intermediate files (No Permission Error)
+        val cacheDir = File(context.cacheDir, "yt_tmp")
+        if (!cacheDir.exists()) cacheDir.mkdirs()
+
+        // Windows/Android safe filename pattern (removes illegal characters)
+        val fileTemplate = "${downloadDir.absolutePath}/%(title).100B.%(ext)s"
 
         val request = YoutubeDLRequest(validUrl).apply {
-            addOption("--no-cache-dir")
             addOption("--no-warnings")
             addOption("--no-mtime")
-            addOption("--socket-timeout", "20")
+            addOption("--windows-filenames") // Special Hindi/Special characters ko crash hone se bachata hai
             addOption("--extractor-args", "youtube:player_client=android,web")
 
+            // Temp files ko app cache me daalein taaki OS permission block na kare
+            addOption("-P", "temp:${cacheDir.absolutePath}")
+
             if (isAudio) {
-                // 1. Audio Extraction & Quality
                 addOption("-x")
                 addOption("--audio-format", "mp3")
                 addOption("--audio-quality", audioBitrate ?: "320K")
                 addOption("-f", "bestaudio/best")
 
-                // 2. Cover Art + ID3 Tags (Artist, Title, Album)
+                // Embed thumbnail safely using cache
                 addOption("--embed-thumbnail")
                 addOption("--add-metadata")
                 addOption("--convert-thumbnails", "jpg")
             } else {
                 val res = resolutionHeight ?: 1080
-                // Exact height selection: pehle target resolution dhundega
-                addOption("-f", "bestvideo[height=$res]+bestaudio/bestvideo[height<=$res]+bestaudio/best[height<=$res]/best")
+                addOption("-f", "bestvideo[height<=$res]+bestaudio/best[height<=$res]/best")
                 addOption("--merge-output-format", "mp4")
                 addOption("--embed-thumbnail")
                 addOption("--add-metadata")
@@ -211,11 +212,14 @@ object DownloaderEngine {
             }
         }
 
-        // Newly created file find karein
+        // Cache cleanup
+        cacheDir.deleteRecursively()
+
+        // Download folder me aayi nayi file khojein
         val finalFile = downloadDir.listFiles()?.maxByOrNull { it.lastModified() }
             ?: File(downloadDir, if (isAudio) "audio.mp3" else "video.mp4")
 
-        // 3. System Scanner Trigger (Taaki Phone ke File Manager / Gallery me turant show ho)
+        // Android Gallery aur Media Scanner ko notify karein
         scanMediaFile(
             context = context,
             file = finalFile,
@@ -224,6 +228,24 @@ object DownloaderEngine {
 
         finalFile
     }
+
+    // Overload without processId
+    suspend fun startDownload(
+        context: Context,
+        targetUrl: String,
+        resolutionHeight: Int?,
+        isAudio: Boolean,
+        audioBitrate: String?,
+        onProgress: (Float, String) -> Unit
+    ): File = startDownload(
+        context = context,
+        targetUrl = targetUrl,
+        resolutionHeight = resolutionHeight,
+        isAudio = isAudio,
+        audioBitrate = audioBitrate,
+        processId = null,
+        onProgress = onProgress
+    )
 
     // Overload for calls without context (backward compatibility)
     suspend fun startDownload(
@@ -235,19 +257,14 @@ object DownloaderEngine {
     ): File = withContext(Dispatchers.IO) {
         val validUrl = fixUrl(targetUrl)
         EngineInitState.ensureInitialized()
-        val downloadDir = if (isAudio) {
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
-        } else {
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
-        }
+        val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
         if (!downloadDir.exists()) downloadDir.mkdirs()
-        val fileTemplate = "${downloadDir.absolutePath}/%(title)s.%(ext)s"
+        val fileTemplate = "${downloadDir.absolutePath}/%(title).100B.%(ext)s"
 
         val request = YoutubeDLRequest(validUrl).apply {
-            addOption("--no-cache-dir")
             addOption("--no-warnings")
             addOption("--no-mtime")
-            addOption("--socket-timeout", "20")
+            addOption("--windows-filenames")
             addOption("--extractor-args", "youtube:player_client=android,web")
 
             if (isAudio) {
@@ -260,7 +277,7 @@ object DownloaderEngine {
                 addOption("--convert-thumbnails", "jpg")
             } else {
                 val res = resolutionHeight ?: 1080
-                addOption("-f", "bestvideo[height=$res]+bestaudio/bestvideo[height<=$res]+bestaudio/best[height<=$res]/best")
+                addOption("-f", "bestvideo[height<=$res]+bestaudio/best[height<=$res]/best")
                 addOption("--merge-output-format", "mp4")
                 addOption("--embed-thumbnail")
                 addOption("--add-metadata")

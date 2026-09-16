@@ -13,10 +13,12 @@
         android:gravity="center_vertical">
 
         <ImageView
-            android:layout_width="18dp"
-            android:layout_height="18dp"
+            android:id="@+id/notification_art_cover_small"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:scaleType="centerCrop"
             android:src="@drawable/ic_notification_download"
-            android:contentDescription="Download" />
+            android:contentDescription="Cover Art" />
 
         <TextView
             android:id="@+id/notification_title_small"

@@ -93,7 +93,8 @@ data class ActiveDownloadTask(
     val id: String,
     val title: String,
     val progress: Float,
-    val speed: String = ""
+    val speed: String = "",
+    val thumbnail: String = ""
 )
 
 data class DownloadedRecord(
@@ -195,12 +196,12 @@ class SealViewModel @JvmOverloads constructor(application: Application? = null) 
         _showBottomSheet.value = false
     }
 
-    fun updateProgress(id: String, title: String, progress: Float, speed: String) {
+    fun updateProgress(id: String, title: String, progress: Float, speed: String, thumbnail: String = "") {
         val current = _activeTasks.value.toMutableMap()
         if (progress >= 100f) {
             current.remove(id)
         } else {
-            current[id] = ActiveDownloadTask(id, title, progress, speed)
+            current[id] = ActiveDownloadTask(id, title, progress, speed, thumbnail)
         }
         _activeTasks.value = current
     }
@@ -996,51 +997,89 @@ fun TasksListScreen(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Art Cover (Thumbnail)
+                    Box(
+                        modifier = Modifier
+                            .size(68.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            task.title,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
-                        IconButton(
-                            onClick = { onCancelTask(task.id) },
-                            modifier = Modifier
-                                .size(32.dp)
-                                .testTag("cancel_task_${task.id}")
-                        ) {
+                        if (task.thumbnail.isNotBlank()) {
+                            AsyncImage(
+                                model = task.thumbnail,
+                                contentDescription = task.title,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
                             Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Cancel download",
-                                tint = Color.Red.copy(alpha = 0.8f),
-                                modifier = Modifier.size(18.dp)
+                                imageVector = Icons.Outlined.Downloading,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(28.dp)
                             )
                         }
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    LinearProgressIndicator(
-                        progress = { (task.progress / 100f).coerceIn(0f, 1f) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(6.dp)
-                            .clip(RoundedCornerShape(3.dp)),
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("${task.progress.toInt()}%", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                        Text(task.speed.ifBlank { "Downloading..." }, color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                task.title,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = { onCancelTask(task.id) },
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .testTag("cancel_task_${task.id}")
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Cancel download",
+                                    tint = Color.Red.copy(alpha = 0.8f),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        LinearProgressIndicator(
+                            progress = { (task.progress / 100f).coerceIn(0f, 1f) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp)),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Only download progress shown
+                        Text(
+                            "${task.progress.toInt()}%",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
                     }
                 }
             }
@@ -1076,12 +1115,29 @@ fun LibraryHistoryScreen(
                     modifier = Modifier.padding(10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    AsyncImage(
-                        model = item.thumbnail,
-                        contentDescription = null,
-                        modifier = Modifier.size(65.dp).clip(RoundedCornerShape(8.dp)),
-                        contentScale = ContentScale.Crop
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(68.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (item.thumbnail.isNotBlank()) {
+                            AsyncImage(
+                                model = item.thumbnail,
+                                contentDescription = item.title,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            Icon(
+                                imageVector = if (item.ext.equals("mp3", ignoreCase = true)) Icons.Default.MusicNote else Icons.Default.Videocam,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(item.title, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)

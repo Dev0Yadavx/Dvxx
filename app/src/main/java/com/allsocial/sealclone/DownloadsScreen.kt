@@ -30,6 +30,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 
 enum class MediaCategoryFilter {
@@ -434,7 +437,7 @@ fun DownloadedMediaCard(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Thumbnail / Icon Box with format & duration badges
+            // Thumbnail / Art Cover with format & duration badges
             Box(
                 modifier = Modifier
                     .size(70.dp)
@@ -445,11 +448,17 @@ fun DownloadedMediaCard(
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = if (item.isVideo) Icons.Default.Videocam else Icons.Default.MusicNote,
-                    contentDescription = null,
-                    tint = if (item.isVideo) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.size(32.dp)
+                AsyncImage(
+                    model = item.thumbnailUri ?: item.uri,
+                    contentDescription = item.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    error = rememberVectorPainter(
+                        if (item.isVideo) Icons.Default.Videocam else Icons.Default.MusicNote
+                    ),
+                    placeholder = rememberVectorPainter(
+                        if (item.isVideo) Icons.Default.Videocam else Icons.Default.MusicNote
+                    )
                 )
 
                 // Duration badge

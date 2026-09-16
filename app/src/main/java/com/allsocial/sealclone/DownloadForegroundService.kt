@@ -1,5 +1,7 @@
 package com.allsocial.sealclone
 
+import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -31,6 +33,7 @@ class DownloadForegroundService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val activeJobs = ConcurrentHashMap<String, Job>()
+    private val artCoverCache = ConcurrentHashMap<String, Bitmap>()
     private var lastNotificationUpdateTime = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -73,11 +76,31 @@ class DownloadForegroundService : Service() {
         title: String,
         thumb: String
     ) {
+        // Pre-fetch art cover in background for notification and tasks
+        if (thumb.isNotBlank()) {
+            serviceScope.launch(Dispatchers.IO) {
+                try {
+                    val loader = coil.Coil.imageLoader(applicationContext)
+                    val req = coil.request.ImageRequest.Builder(applicationContext)
+                        .data(thumb)
+                        .allowHardware(false)
+                        .size(192, 192)
+                        .build()
+                    val result = loader.execute(req)
+                    val bmp = (result.drawable as? BitmapDrawable)?.bitmap
+                    if (bmp != null) {
+                        artCoverCache[taskId] = bmp
+                        updateForegroundNotification(taskId, title, 0f)
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+
         // Promote service to foreground immediately with initial notification
-        startInForeground(taskId, title, 0f, "Starting download...")
+        startInForeground(taskId, title, 0f)
 
         val job = serviceScope.launch {
-            _activeTasksFlow.value = _activeTasksFlow.value + (taskId to ActiveDownloadTask(taskId, title, 0f, "Starting..."))
+            _activeTasksFlow.value = _activeTasksFlow.value + (taskId to ActiveDownloadTask(taskId, title, 0f, "", thumb))
 
             try {
                 var lastProgress = 0f
@@ -88,7 +111,7 @@ class DownloadForegroundService : Service() {
                     isAudioOnly = isAudio,
                     audioBitrate = if (isAudio) qualityLabel else null,
                     processId = taskId
-                ) { progress, speedLine ->
+                ) { progress, _ ->
                     val now = System.currentTimeMillis()
                     // Throttle notification updates to avoid flooding Android system
                     val progressInt = progress.toInt()
@@ -96,17 +119,15 @@ class DownloadForegroundService : Service() {
                     val shouldUpdateNotification = (now - lastNotificationUpdateTime > 400) || (progressInt != lastInt)
 
                     lastProgress = progress
-                    val cleanSpeed = extractSpeed(speedLine)
 
-                    // Update UI state flow
+                    // Update UI state flow with thumbnail and clean progress
                     val currentTasks = _activeTasksFlow.value.toMutableMap()
-                    currentTasks[taskId] = ActiveDownloadTask(taskId, title, progress, cleanSpeed)
+                    currentTasks[taskId] = ActiveDownloadTask(taskId, title, progress, "", thumb)
                     _activeTasksFlow.value = currentTasks
 
                     if (shouldUpdateNotification) {
                         lastNotificationUpdateTime = now
-                        val status = if (cleanSpeed.isNotBlank()) "$progressInt% • $cleanSpeed" else "$progressInt%"
-                        updateForegroundNotification(taskId, title, progress, status)
+                        updateForegroundNotification(taskId, title, progress)
                     }
                 }
 
@@ -159,6 +180,7 @@ class DownloadForegroundService : Service() {
                     )
                 )
             } finally {
+                artCoverCache.remove(taskId)
                 activeJobs.remove(taskId)
                 val currentTasks = _activeTasksFlow.value.toMutableMap()
                 currentTasks.remove(taskId)
@@ -172,7 +194,7 @@ class DownloadForegroundService : Service() {
                     // Update notification with next active download
                     val next = _activeTasksFlow.value.values.firstOrNull()
                     if (next != null) {
-                        updateForegroundNotification(next.id, next.title, next.progress, next.speed)
+                        updateForegroundNotification(next.id, next.title, next.progress)
                     }
                 }
             }
@@ -186,6 +208,7 @@ class DownloadForegroundService : Service() {
             YoutubeDL.getInstance().destroyProcessById(taskId)
         } catch (_: Exception) {}
 
+        artCoverCache.remove(taskId)
         activeJobs[taskId]?.cancel()
         activeJobs.remove(taskId)
 
@@ -199,8 +222,8 @@ class DownloadForegroundService : Service() {
         }
     }
 
-    private fun startInForeground(taskId: String, title: String, progress: Float, status: String) {
-        val notification = buildDownloadNotification(taskId, title, progress, status)
+    private fun startInForeground(taskId: String, title: String, progress: Float) {
+        val notification = buildDownloadNotification(taskId, title, progress)
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(
@@ -216,8 +239,8 @@ class DownloadForegroundService : Service() {
         }
     }
 
-    private fun updateForegroundNotification(taskId: String, title: String, progress: Float, status: String) {
-        val notification = buildDownloadNotification(taskId, title, progress, status)
+    private fun updateForegroundNotification(taskId: String, title: String, progress: Float) {
+        val notification = buildDownloadNotification(taskId, title, progress)
         val manager = getSystemService(NotificationManager::class.java)
         manager.notify(NOTIFICATION_ID, notification)
     }
@@ -225,8 +248,7 @@ class DownloadForegroundService : Service() {
     private fun buildDownloadNotification(
         taskId: String,
         title: String,
-        progress: Float,
-        statusText: String
+        progress: Float
     ): Notification {
         // Tap notification to return to the app's Tasks tab
         val openIntent = Intent(this, MainActivity::class.java).apply {
@@ -254,27 +276,38 @@ class DownloadForegroundService : Service() {
 
         val progressInt = progress.toInt().coerceIn(0, 100)
         val isIndeterminate = progress <= 0f || progress > 100f
-        val cleanStatus = statusText.ifBlank { "Downloading..." }
+        val percentText = if (isIndeterminate) "..." else "$progressInt%"
 
-        // Custom notification RemoteViews with progress bar and percent
+        val coverBitmap = artCoverCache[taskId]
+
+        // Custom notification RemoteViews with art cover, title, progress bar, and percentage
         val remoteViewsSmall = android.widget.RemoteViews(packageName, R.layout.notification_download_progress_small).apply {
             setTextViewText(R.id.notification_title_small, title)
-            setTextViewText(R.id.notification_percent_small, if (isIndeterminate) "..." else "$progressInt%")
+            setTextViewText(R.id.notification_percent_small, percentText)
             setProgressBar(R.id.notification_progress_bar_small, 100, progressInt, isIndeterminate)
+            if (coverBitmap != null) {
+                setImageViewBitmap(R.id.notification_art_cover_small, coverBitmap)
+            } else {
+                setImageViewResource(R.id.notification_art_cover_small, R.drawable.ic_notification_download)
+            }
         }
 
         val remoteViewsBig = android.widget.RemoteViews(packageName, R.layout.notification_download_progress).apply {
             setTextViewText(R.id.notification_title, title)
-            setTextViewText(R.id.notification_percent, if (isIndeterminate) "..." else "$progressInt%")
-            setTextViewText(R.id.notification_status, cleanStatus)
+            setTextViewText(R.id.notification_percent, percentText)
             setProgressBar(R.id.notification_progress_bar, 100, progressInt, isIndeterminate)
             setOnClickPendingIntent(R.id.notification_cancel, cancelPendingIntent)
+            if (coverBitmap != null) {
+                setImageViewBitmap(R.id.notification_art_cover, coverBitmap)
+            } else {
+                setImageViewResource(R.id.notification_art_cover, R.drawable.ic_notification_download)
+            }
         }
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_download)
             .setContentTitle(title)
-            .setContentText(cleanStatus)
+            .setContentText(percentText)
             .setContentIntent(contentPendingIntent)
             .setCustomContentView(remoteViewsSmall)
             .setCustomBigContentView(remoteViewsBig)
@@ -289,6 +322,10 @@ class DownloadForegroundService : Service() {
                 "Cancel",
                 cancelPendingIntent
             )
+
+        if (coverBitmap != null) {
+            builder.setLargeIcon(coverBitmap)
+        }
 
         return builder.build()
     }
@@ -305,18 +342,22 @@ class DownloadForegroundService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+        val coverBitmap = artCoverCache[taskId]
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setContentTitle("Download Complete")
             .setContentText("$title (${formatFileSize(file.length())})")
             .setContentIntent(contentPendingIntent)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .build()
+
+        if (coverBitmap != null) {
+            builder.setLargeIcon(coverBitmap)
+        }
 
         val notificationId = (System.currentTimeMillis() % 10000).toInt() + 2000
         val manager = getSystemService(NotificationManager::class.java)
-        manager.notify(notificationId, notification)
+        manager.notify(notificationId, builder.build())
     }
 
     private fun showFailureNotification(taskId: String, title: String, error: String) {

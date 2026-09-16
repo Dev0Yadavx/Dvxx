@@ -6,38 +6,56 @@
     android:padding="12dp"
     android:background="#1E293B">
 
-    <!-- Top Row: Icon + Title + Cancel Button -->
+    <!-- Top Row: Art Cover + Title + Cancel Button -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical">
 
+        <!-- Art Cover Thumbnail -->
         <ImageView
-            android:id="@+id/notification_icon"
-            android:layout_width="22dp"
-            android:layout_height="22dp"
+            android:id="@+id/notification_art_cover"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:scaleType="centerCrop"
             android:src="@drawable/ic_notification_download"
-            android:contentDescription="Download" />
+            android:contentDescription="Cover Art" />
 
-        <TextView
-            android:id="@+id/notification_title"
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginStart="8dp"
+            android:layout_marginStart="12dp"
             android:layout_marginEnd="8dp"
-            android:textColor="#FFFFFF"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:maxLines="1"
-            android:ellipsize="end"
-            android:text="Downloading Media" />
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/notification_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:text="Downloading Media" />
+
+            <TextView
+                android:id="@+id/notification_percent"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:textColor="#00ADB5"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:text="0%" />
+        </LinearLayout>
 
         <ImageButton
             android:id="@+id/notification_cancel"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:src="@drawable/ic_notification_cancel"
             android:contentDescription="Cancel Download" />
@@ -50,36 +68,7 @@
         android:layout_width="match_parent"
         android:layout_height="8dp"
         android:layout_marginTop="10dp"
-        android:layout_marginBottom="8dp"
         android:max="100"
         android:progress="0"
         android:progressDrawable="@drawable/custom_progress_bar" />
-
-    <!-- Bottom Row: Status / Speed + Percent -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
-
-        <TextView
-            android:id="@+id/notification_status"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:textColor="#94A3B8"
-            android:textSize="12sp"
-            android:maxLines="1"
-            android:ellipsize="end"
-            android:text="Starting download..." />
-
-        <TextView
-            android:id="@+id/notification_percent"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textColor="#00ADB5"
-            android:textSize="13sp"
-            android:textStyle="bold"
-            android:text="0%" />
-    </LinearLayout>
 </LinearLayout>
