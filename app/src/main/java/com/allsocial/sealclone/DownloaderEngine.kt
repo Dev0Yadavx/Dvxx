@@ -157,6 +157,7 @@ object DownloaderEngine {
             addOption("--flat-playlist")
             addOption("--no-warnings")
             addOption("--ignore-errors")
+            addOption("--extractor-args", "youtube:player_client=android")
         }
 
         val results = mutableListOf<SearchItem>()
@@ -191,11 +192,14 @@ object DownloaderEngine {
     // Direct stream for In-App Preview
     suspend fun getStreamUrl(webUrl: String): String = withContext(Dispatchers.IO) {
         val clean = sanitizeUrl(webUrl)
+        val isYt = clean.contains("youtube.com") || clean.contains("youtu.be")
         EngineInitState.ensureInitialized()
         val request = YoutubeDLRequest(clean).apply {
             addOption("-g")
             addOption("-f", "best[ext=mp4]/best")
-            addOption("--no-warnings")
+            if (isYt) {
+                addOption("--extractor-args", "youtube:player_client=android")
+            }
         }
         val out = try {
             YoutubeDL.getInstance().execute(request).out ?: ""
@@ -215,6 +219,7 @@ object DownloaderEngine {
         onProgress: (Float, String) -> Unit
     ): File = withContext(Dispatchers.IO) {
         val cleanUrl = sanitizeUrl(rawUrl)
+        val isYt = cleanUrl.contains("youtube.com") || cleanUrl.contains("youtu.be")
         EngineInitState.ensureInitialized(context)
 
         val targetDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
@@ -229,26 +234,28 @@ object DownloaderEngine {
             addOption("--no-warnings")
             addOption("--no-mtime")
             addOption("--windows-filenames")
+            addOption("--no-check-certificates")
+            addOption("--retries", "10")
             addOption("-P", "temp:${tempCache.absolutePath}")
 
+            // 403 Forbidden Fix: Force YouTube Android Client
+            if (isYt) {
+                addOption("--extractor-args", "youtube:player_client=android")
+                addOption("--user-agent", "com.google.android.youtube/19.29.35 (Linux; U; Android 14) gzip")
+            }
+
             if (isAudioOnly) {
-                // Audio: Auto pick best available audio, convert to mp3
                 addOption("-x")
                 addOption("--audio-format", "mp3")
                 addOption("--audio-quality", audioBitrateKbps ?: "320K")
-                addOption("-f", "bestaudio/best")
+                addOption("-f", "ba/b")
                 addOption("--embed-thumbnail")
                 addOption("--add-metadata")
                 addOption("--convert-thumbnails", "jpg")
             } else {
                 val h = selectedHeight ?: 1080
-                // Bulletproof Format Filter:
-                // 1. Target height ki video + best audio
-                // 2. Us height se choti jo bhi best video ho + audio
-                // 3. Single progressive stream
-                // 4. Ultimate fallback: best
-                val formatString = "bestvideo[height<=$h]+bestaudio/best[height<=$h]/bestvideo+bestaudio/best"
-                addOption("-f", formatString)
+                // Safe format fallback chain
+                addOption("-f", "bv*[height<=$h]+ba/b[height<=$h]/bv*+ba/b")
                 addOption("--merge-output-format", "mp4")
                 addOption("--embed-thumbnail")
                 addOption("--add-metadata")

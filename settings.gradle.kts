@@ -23,6 +23,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Xtube"
+rootProject.name = "X TUBE"
 
 include(":app")

@@ -64,7 +64,7 @@ fun SmallSearchUrlBox(
     onPasteClick: () -> Unit = {},
     onPaste: () -> Unit = onPasteClick,
     onClear: () -> Unit = { onValueChange("") },
-    placeholder: String = "Search song or paste media URL...",
+    placeholder: String = "Paste URL & search",
     modifier: Modifier = Modifier
 ) {
     val actualPaste = if (onPaste != onPasteClick && onPaste != {}) onPaste else onPasteClick

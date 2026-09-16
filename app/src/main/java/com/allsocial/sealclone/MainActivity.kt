@@ -152,7 +152,7 @@ class SealViewModel @JvmOverloads constructor(application: Application? = null) 
         prefs.edit().putString("pref_color_preset", preset).apply()
     }
 
-    private val _downloadFolder = MutableStateFlow(prefs.getString("pref_download_folder", "Downloads/Xtube") ?: "Downloads/Xtube")
+    private val _downloadFolder = MutableStateFlow(prefs.getString("pref_download_folder", "Downloads/X TUBE") ?: "Downloads/X TUBE")
     val downloadFolder = _downloadFolder.asStateFlow()
 
     fun setDownloadFolder(path: String) {
@@ -245,6 +245,52 @@ class SealViewModel @JvmOverloads constructor(application: Application? = null) 
             }
             prefs.edit().putString("pref_downloaded_history", array.toString()).apply()
         } catch (_: Exception) {}
+    }
+
+    private fun loadSearchHistoryFromDisk(): List<String> {
+        val json = prefs.getString("pref_search_history", null) ?: return emptyList()
+        return try {
+            val array = org.json.JSONArray(json)
+            val list = mutableListOf<String>()
+            for (i in 0 until array.length()) {
+                val q = array.getString(i).trim()
+                if (q.isNotBlank()) list.add(q)
+            }
+            list
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun saveSearchHistoryToDisk(list: List<String>) {
+        try {
+            val array = org.json.JSONArray()
+            list.take(30).forEach { array.put(it) }
+            prefs.edit().putString("pref_search_history", array.toString()).apply()
+        } catch (_: Exception) {}
+    }
+
+    private val _searchHistory = MutableStateFlow<List<String>>(loadSearchHistoryFromDisk())
+    val searchHistory = _searchHistory.asStateFlow()
+
+    fun addSearchQuery(query: String) {
+        val clean = query.trim()
+        if (clean.isBlank()) return
+        val updated = listOf(clean) + _searchHistory.value.filter { !it.equals(clean, ignoreCase = true) }
+        val capped = updated.take(30)
+        _searchHistory.value = capped
+        saveSearchHistoryToDisk(capped)
+    }
+
+    fun removeSearchQuery(query: String) {
+        val updated = _searchHistory.value.filter { !it.equals(query, ignoreCase = true) }
+        _searchHistory.value = updated
+        saveSearchHistoryToDisk(updated)
+    }
+
+    fun clearSearchHistory() {
+        _searchHistory.value = emptyList()
+        saveSearchHistoryToDisk(emptyList())
     }
 
     private val _downloadedHistory = MutableStateFlow<List<DownloadedRecord>>(loadHistoryFromDisk())
@@ -629,6 +675,8 @@ fun HomeSearchScreen(
     var selectedMediaData by remember { mutableStateOf<ParsedMediaData?>(null) }
     var isInspecting by remember { mutableStateOf(false) }
 
+    val searchHistory by vm.searchHistory.collectAsState()
+
     // Jab user Search bar me direct Link paste kare ya List item par tap kare:
     fun handleTargetSelection(targetUrl: String) {
         scope.launch {
@@ -643,6 +691,27 @@ fun HomeSearchScreen(
                 Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
             } finally {
                 isInspecting = false
+            }
+        }
+    }
+
+    val executeSearch: (String) -> Unit = { query ->
+        val clean = query.trim()
+        if (clean.isNotBlank()) {
+            keyboardController?.hide()
+            val isUrl = clean.startsWith("http://") || clean.startsWith("https://")
+            if (isUrl) {
+                handleTargetSelection(clean)
+            } else {
+                vm.addSearchQuery(clean)
+                isLoading = true
+                scope.launch {
+                    searchResults = DownloaderEngine.searchYouTubeTop10(clean)
+                    isLoading = false
+                    if (searchResults.isEmpty()) {
+                        Toast.makeText(context, "No results found", Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
         }
     }
@@ -684,15 +753,15 @@ fun HomeSearchScreen(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Image(
-                        painter = painterResource(id = R.drawable.app_logo),
-                        contentDescription = "Xtube Logo",
+                        painter = painterResource(id = R.drawable.ic_app_logo_vector),
+                        contentDescription = "X TUBE Logo",
                         modifier = Modifier
                             .size(30.dp)
                             .clip(RoundedCornerShape(8.dp))
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Xtube",
+                        text = "X TUBE",
                         fontSize = 22.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = MaterialTheme.colorScheme.primary
@@ -744,7 +813,7 @@ fun HomeSearchScreen(
                 }
             }
 
-        // When search results are present: HIDE search box and platforms bar for full clean view!
+        // When search results are present: Clean full search box top bar
         if (searchResults.isNotEmpty()) {
             Row(
                 modifier = Modifier
@@ -752,7 +821,6 @@ fun HomeSearchScreen(
                     .padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Only back arrow button, count text removed
                 IconButton(
                     onClick = { searchResults = emptyList() },
                     modifier = Modifier
@@ -766,34 +834,75 @@ fun HomeSearchScreen(
                         modifier = Modifier.size(24.dp)
                     )
                 }
-            }
-        } else {
-            // Search URL box thoda niche karo (comfortable spacing)
-            Spacer(modifier = Modifier.height(14.dp))
 
-            // Small Style Search URL Box
-            SmallSearchUrlBox(
-                value = searchInput,
-                onValueChange = { searchInput = it },
-                onSearch = {
-                    val clean = searchInput.trim()
-                    if (clean.isNotBlank()) {
-                        keyboardController?.hide() // Keyboard band karein
-                        val isUrl = clean.startsWith("http://") || clean.startsWith("https://")
-                        if (isUrl) {
-                            handleTargetSelection(clean)
-                        } else {
-                            isLoading = true
-                            scope.launch {
-                                searchResults = DownloaderEngine.searchYouTubeTop10(clean)
-                                isLoading = false
-                                if (searchResults.isEmpty()) {
-                                    Toast.makeText(context, "No results found", Toast.LENGTH_SHORT).show()
-                                }
+                Spacer(modifier = Modifier.width(6.dp))
+
+                // Clean Full Top Search Bar
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp),
+                    shape = RoundedCornerShape(22.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        BasicTextField(
+                            value = searchInput,
+                            onValueChange = { searchInput = it },
+                            singleLine = true,
+                            textStyle = TextStyle(
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.Medium
+                            ),
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = { executeSearch(searchInput) }),
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("top_search_input")
+                        )
+
+                        if (searchInput.isNotEmpty()) {
+                            IconButton(
+                                onClick = { searchInput = "" },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Clear",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
                             }
                         }
                     }
-                },
+                }
+            }
+        } else {
+            // Search URL box (comfortable spacing)
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Small Style Search URL Box with "Paste URL & search"
+            SmallSearchUrlBox(
+                value = searchInput,
+                onValueChange = { searchInput = it },
+                onSearch = { executeSearch(searchInput) },
                 onPaste = {
                     clipboard.getText()?.let { clipData ->
                         val raw = clipData.text.toString().trim()
@@ -801,22 +910,111 @@ fun HomeSearchScreen(
                         val fullUrl = urlRegex.find(raw)?.value ?: raw
                         searchInput = fullUrl
 
-                        // Auto trigger on paste
-                        if (fullUrl.startsWith("http://") || fullUrl.startsWith("https://")) {
-                            keyboardController?.hide()
-                            handleTargetSelection(fullUrl)
-                        } else if (fullUrl.isNotBlank()) {
-                            keyboardController?.hide()
-                            isLoading = true
-                            scope.launch {
-                                searchResults = DownloaderEngine.searchYouTubeTop10(fullUrl)
-                                isLoading = false
-                            }
+                        if (fullUrl.isNotBlank()) {
+                            executeSearch(fullUrl)
                         }
                     }
                 },
                 onClear = { searchInput = "" }
             )
+
+            // Search History Section (Save & Remove)
+            if (searchHistory.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.History,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "Recent Searches",
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        TextButton(
+                            onClick = { vm.clearSearchHistory() },
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                            modifier = Modifier.height(28.dp).testTag("btn_clear_search_history")
+                        ) {
+                            Text(
+                                text = "Clear All",
+                                fontSize = 11.5.sp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(vertical = 2.dp)
+                    ) {
+                        items(searchHistory) { historyQuery ->
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                                modifier = Modifier.testTag("chip_search_history_$historyQuery")
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 4.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.clickable {
+                                            searchInput = historyQuery
+                                            executeSearch(historyQuery)
+                                        }
+                                    ) {
+                                        Text(
+                                            text = historyQuery,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(4.dp))
+
+                                    IconButton(
+                                        onClick = { vm.removeSearchQuery(historyQuery) },
+                                        modifier = Modifier
+                                            .size(20.dp)
+                                            .testTag("btn_remove_history_$historyQuery")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Remove search",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(14.dp))
 
@@ -1766,8 +1964,8 @@ fun SettingsScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Image(
-                    painter = painterResource(id = R.drawable.app_logo),
-                    contentDescription = "Xtube Logo",
+                    painter = painterResource(id = R.drawable.ic_app_logo_vector),
+                    contentDescription = "X TUBE Logo",
                     modifier = Modifier
                         .size(46.dp)
                         .clip(RoundedCornerShape(12.dp))
@@ -1775,7 +1973,7 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.width(14.dp))
                 Column {
                     Text(
-                        text = "Xtube",
+                        text = "X TUBE",
                         fontSize = 17.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = MaterialTheme.colorScheme.primary
@@ -2025,8 +2223,8 @@ fun SettingsScreen(
                 ) {
                     TextButton(
                         onClick = {
-                            vm.setDownloadFolder("Downloads/Xtube")
-                            Toast.makeText(context, "Reset to Downloads/Xtube", Toast.LENGTH_SHORT).show()
+                            vm.setDownloadFolder("Downloads/X TUBE")
+                            Toast.makeText(context, "Reset to Downloads/X TUBE", Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.testTag("btn_reset_download_folder")
                     ) {
@@ -2399,15 +2597,15 @@ fun SettingsScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Image(
-                    painter = painterResource(id = R.drawable.app_logo),
-                    contentDescription = "Xtube Logo",
+                    painter = painterResource(id = R.drawable.ic_app_logo_vector),
+                    contentDescription = "X TUBE Logo",
                     modifier = Modifier
                         .size(44.dp)
                         .clip(RoundedCornerShape(10.dp))
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Xtube Media Downloader",
+                    text = "X TUBE Media Downloader",
                     fontSize = 14.5.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface

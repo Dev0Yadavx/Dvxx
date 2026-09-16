@@ -110,8 +110,8 @@ fun SplashScreen(
                 contentAlignment = Alignment.Center
             ) {
                 androidx.compose.foundation.Image(
-                    painter = androidx.compose.ui.res.painterResource(id = R.drawable.app_logo),
-                    contentDescription = "Xtube Logo",
+                    painter = androidx.compose.ui.res.painterResource(id = R.drawable.ic_app_logo_vector),
+                    contentDescription = "X TUBE Logo",
                     modifier = Modifier.fillMaxSize(),
                     contentScale = androidx.compose.ui.layout.ContentScale.Fit
                 )
@@ -121,31 +121,12 @@ fun SplashScreen(
 
             // Brand Typography
             Text(
-                text = "Xtube",
-                fontSize = 32.sp,
-                fontWeight = FontWeight.ExtraBold,
+                text = "X TUBE",
+                fontSize = 42.sp,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Cursive,
+                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
-                letterSpacing = 1.sp
-            )
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Text(
-                text = "Fast • Dynamic • Lossless",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary,
-                letterSpacing = 0.8.sp
-            )
-
-            Spacer(modifier = Modifier.height(36.dp))
-
-            // Modern M3 Circular Loader
-            CircularProgressIndicator(
-                modifier = Modifier.size(28.dp),
-                strokeWidth = 2.8.dp,
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                letterSpacing = 2.sp
             )
         }
     }
