@@ -23,6 +23,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -44,6 +45,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -53,6 +55,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -115,14 +118,15 @@ enum class AppTab(val label: String, val activeIcon: ImageVector, val inactiveIc
 
 // ================= VIEWMODEL =================
 class SealViewModel @JvmOverloads constructor(application: Application? = null) : ViewModel() {
-    private val prefs = application?.getSharedPreferences("seal_app_prefs", Context.MODE_PRIVATE)
+    private val context: Context = application ?: EngineInitState.appContext ?: SealApp.instance
+    private val prefs = context.getSharedPreferences("seal_app_prefs", Context.MODE_PRIVATE)
 
-    private val _isDarkMode = MutableStateFlow(prefs?.getBoolean("pref_dark_mode", true) ?: true)
+    private val _isDarkMode = MutableStateFlow(prefs.getBoolean("pref_dark_mode", true))
     val isDarkMode = _isDarkMode.asStateFlow()
 
     fun setDarkMode(enabled: Boolean) {
         _isDarkMode.value = enabled
-        prefs?.edit()?.putBoolean("pref_dark_mode", enabled)?.apply()
+        prefs.edit().putBoolean("pref_dark_mode", enabled).apply()
     }
 
     fun toggleDarkMode() {
@@ -130,28 +134,95 @@ class SealViewModel @JvmOverloads constructor(application: Application? = null) 
     }
 
     private val _useDynamicColor = MutableStateFlow(
-        prefs?.getBoolean("pref_dynamic_color", Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) 
-            ?: (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+        prefs.getBoolean("pref_dynamic_color", Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
     )
     val useDynamicColor = _useDynamicColor.asStateFlow()
 
     fun setUseDynamicColor(enabled: Boolean) {
         _useDynamicColor.value = enabled
-        prefs?.edit()?.putBoolean("pref_dynamic_color", enabled)?.apply()
+        prefs.edit().putBoolean("pref_dynamic_color", enabled).apply()
     }
 
-    private val _colorPreset = MutableStateFlow(prefs?.getString("pref_color_preset", "CYAN") ?: "CYAN")
+    private val _colorPreset = MutableStateFlow(prefs.getString("pref_color_preset", "CYAN") ?: "CYAN")
     val colorPreset = _colorPreset.asStateFlow()
 
     fun setColorPreset(preset: String) {
         _colorPreset.value = preset
-        prefs?.edit()?.putString("pref_color_preset", preset)?.apply()
+        prefs.edit().putString("pref_color_preset", preset).apply()
+    }
+
+    private val _dynamicColor = MutableStateFlow<Color?>(null)
+    val dynamicColor = _dynamicColor.asStateFlow()
+
+    fun setDynamicColor(color: Color?) {
+        _dynamicColor.value = color
+    }
+
+    fun updateDynamicThemeFromUrl(context: Context, thumbnailUrl: String) {
+        if (thumbnailUrl.isBlank()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val color = DynamicThemeEngine.extractThemeFromThumbnail(context, thumbnailUrl)
+            if (color != null) {
+                withContext(Dispatchers.Main) {
+                    _dynamicColor.value = color
+                }
+            }
+        }
+    }
+
+    private val _showAutoUpdateDialog = MutableStateFlow(false)
+    val showAutoUpdateDialog = _showAutoUpdateDialog.asStateFlow()
+
+    fun setAutoUpdateDialog(show: Boolean) {
+        _showAutoUpdateDialog.value = show
     }
 
     private val _activeTasks = MutableStateFlow<Map<String, ActiveDownloadTask>>(emptyMap())
     val activeTasks = _activeTasks.asStateFlow()
 
-    private val _downloadedHistory = MutableStateFlow<List<DownloadedRecord>>(emptyList())
+    private fun loadHistoryFromDisk(): List<DownloadedRecord> {
+        val json = prefs.getString("pref_downloaded_history", null) ?: return emptyList()
+        return try {
+            val array = org.json.JSONArray(json)
+            val list = mutableListOf<DownloadedRecord>()
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                list.add(
+                    DownloadedRecord(
+                        title = obj.optString("title"),
+                        filePath = obj.optString("filePath"),
+                        thumbnail = obj.optString("thumbnail"),
+                        quality = obj.optString("quality"),
+                        ext = obj.optString("ext"),
+                        fileSize = obj.optString("fileSize")
+                    )
+                )
+            }
+            list
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun saveHistoryToDisk(list: List<DownloadedRecord>) {
+        try {
+            val array = org.json.JSONArray()
+            list.forEach { r ->
+                val obj = org.json.JSONObject().apply {
+                    put("title", r.title)
+                    put("filePath", r.filePath)
+                    put("thumbnail", r.thumbnail)
+                    put("quality", r.quality)
+                    put("ext", r.ext)
+                    put("fileSize", r.fileSize)
+                }
+                array.put(obj)
+            }
+            prefs.edit().putString("pref_downloaded_history", array.toString()).apply()
+        } catch (_: Exception) {}
+    }
+
+    private val _downloadedHistory = MutableStateFlow<List<DownloadedRecord>>(loadHistoryFromDisk())
     val downloadedHistory = _downloadedHistory.asStateFlow()
 
     private val _showBottomSheet = MutableStateFlow(false)
@@ -171,6 +242,14 @@ class SealViewModel @JvmOverloads constructor(application: Application? = null) 
                 if (event.isSuccess && event.record != null) {
                     addCompletedRecord(event.record)
                 }
+            }
+        }
+        // Auto check update and show update dialog if needed
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                _showAutoUpdateDialog.value = false
+            } catch (e: Exception) {
+                // Ignore
             }
         }
     }
@@ -207,13 +286,17 @@ class SealViewModel @JvmOverloads constructor(application: Application? = null) 
     }
 
     fun addCompletedRecord(record: DownloadedRecord) {
-        _downloadedHistory.value = listOf(record) + _downloadedHistory.value
+        val updated = listOf(record) + _downloadedHistory.value.filter { it.filePath != record.filePath }
+        _downloadedHistory.value = updated
+        saveHistoryToDisk(updated)
     }
 
     fun removeRecord(record: DownloadedRecord) {
         val file = File(record.filePath)
         if (file.exists()) file.delete()
-        _downloadedHistory.value = _downloadedHistory.value.filter { it != record }
+        val updated = _downloadedHistory.value.filter { it != record }
+        _downloadedHistory.value = updated
+        saveHistoryToDisk(updated)
     }
 }
 
@@ -306,10 +389,13 @@ class MainActivity : ComponentActivity() {
             val isDarkMode by vm.isDarkMode.collectAsState()
             val useDynamicColor by vm.useDynamicColor.collectAsState()
             val colorPresetId by vm.colorPreset.collectAsState()
+            val dynamicDominantColor by vm.dynamicColor.collectAsState()
             val context = LocalContext.current
 
-            val colorScheme = remember(isDarkMode, useDynamicColor, colorPresetId) {
-                if (useDynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val colorScheme = remember(isDarkMode, useDynamicColor, colorPresetId, dynamicDominantColor) {
+                if (dynamicDominantColor != null) {
+                    DynamicThemeEngine.buildDynamicColorScheme(dynamicDominantColor!!, isDarkMode)
+                } else if (useDynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     if (isDarkMode) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
                 } else {
                     val preset = ColorPresetRegistry.getPreset(colorPresetId)
@@ -320,13 +406,32 @@ class MainActivity : ComponentActivity() {
             MaterialTheme(
                 colorScheme = colorScheme
             ) {
-                MainAppScaffold(
-                    initialSharedUrl = sharedUrl,
-                    onUrlConsumed = { sharedUrl = "" },
-                    requestedTab = requestedTab,
-                    onTabConsumed = { requestedTab = null },
-                    vm = vm
-                )
+                val view = androidx.compose.ui.platform.LocalView.current
+                if (!view.isInEditMode) {
+                    androidx.compose.runtime.SideEffect {
+                        val window = (context as? android.app.Activity)?.window ?: return@SideEffect
+                        androidx.core.view.WindowCompat.getInsetsController(window, view).apply {
+                            isAppearanceLightStatusBars = !isDarkMode
+                            isAppearanceLightNavigationBars = !isDarkMode
+                        }
+                    }
+                }
+
+                var showSplash by remember { mutableStateOf(true) }
+
+                if (showSplash) {
+                    SplashScreen(
+                        onSplashFinished = { showSplash = false }
+                    )
+                } else {
+                    MainAppScaffold(
+                        initialSharedUrl = sharedUrl,
+                        onUrlConsumed = { sharedUrl = "" },
+                        requestedTab = requestedTab,
+                        onTabConsumed = { requestedTab = null },
+                        vm = vm
+                    )
+                }
             }
         }
     }
@@ -504,7 +609,11 @@ fun HomeSearchScreen(
         scope.launch {
             isInspecting = true
             try {
-                selectedMediaData = DownloaderEngine.inspectUrl(targetUrl)
+                val data = DownloaderEngine.inspectUrl(targetUrl)
+                selectedMediaData = data
+                if (data.thumbnail.isNotBlank()) {
+                    vm.updateDynamicThemeFromUrl(context, data.thumbnail)
+                }
             } catch (e: Exception) {
                 Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
             } finally {
@@ -527,72 +636,78 @@ fun HomeSearchScreen(
         }
     }
 
-    Column(
+    val isDarkMode by vm.isDarkMode.collectAsState()
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .statusBarsPadding()
-            .padding(horizontal = 16.dp)
+            .background(MaterialTheme.colorScheme.background)
     ) {
-        // App Bar Title & Controls
-        Row(
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .fillMaxSize()
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp)
         ) {
-            Text(
-                text = "Seal Downloader",
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                val isDarkMode by vm.isDarkMode.collectAsState()
-                IconButton(
-                    onClick = { vm.toggleDarkMode() },
-                    modifier = Modifier.testTag("btn_quick_theme_toggle")
-                ) {
-                    Icon(
-                        imageVector = if (isDarkMode) Icons.Default.LightMode else Icons.Default.DarkMode,
-                        contentDescription = "Toggle theme mode",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-                IconButton(
-                    onClick = {
-                        if (!showBottomSheet && selectedItem == null) {
-                            val inputUrl = searchInput.trim()
-                            if (inputUrl.isNotBlank()) {
-                                vm.openBottomSheet(
-                                    SearchItem(
-                                        id = System.currentTimeMillis().toString(),
-                                        title = inputUrl,
-                                        uploader = "Direct Media",
-                                        duration = "--:--",
-                                        thumbnail = "",
-                                        url = inputUrl
+            // App Bar Title & Controls
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Xtube",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = { vm.toggleDarkMode() },
+                        modifier = Modifier.testTag("btn_quick_theme_toggle")
+                    ) {
+                        Icon(
+                            imageVector = if (isDarkMode) Icons.Default.LightMode else Icons.Default.DarkMode,
+                            contentDescription = "Toggle theme mode",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            if (!showBottomSheet && selectedItem == null) {
+                                val inputUrl = searchInput.trim()
+                                if (inputUrl.isNotBlank()) {
+                                    vm.openBottomSheet(
+                                        SearchItem(
+                                            id = System.currentTimeMillis().toString(),
+                                            title = inputUrl,
+                                            uploader = "Direct Media",
+                                            duration = "--:--",
+                                            thumbnail = "",
+                                            url = inputUrl
+                                        )
                                     )
-                                )
-                            } else if (searchResults.isNotEmpty()) {
-                                vm.openBottomSheet(searchResults.first())
+                                } else if (searchResults.isNotEmpty()) {
+                                    vm.openBottomSheet(searchResults.first())
+                                } else {
+                                    vm.toggleBottomSheet()
+                                }
                             } else {
                                 vm.toggleBottomSheet()
                             }
-                        } else {
-                            vm.toggleBottomSheet()
-                        }
-                    },
-                    modifier = Modifier.testTag("btn_toggle_bottom_sheet")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Tune,
-                        contentDescription = "Toggle download options bottom sheet",
-                        tint = if (showBottomSheet) MaterialTheme.colorScheme.primary else Color.Gray
-                    )
+                        },
+                        modifier = Modifier.testTag("btn_toggle_bottom_sheet")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = "Toggle download options bottom sheet",
+                            tint = if (showBottomSheet) MaterialTheme.colorScheme.primary else Color.Gray
+                        )
+                    }
                 }
             }
-        }
 
         // When search results are present: HIDE search box and platforms bar for full clean view!
         if (searchResults.isNotEmpty()) {
@@ -790,7 +905,7 @@ fun HomeSearchScreen(
                                 )
                             }
 
-                            // Bottom-Left "Tap to direct play" hint badge
+                            // Bottom-Left "Play" hint badge (Updated from "Tap to direct play")
                             Row(
                                 modifier = Modifier
                                     .align(Alignment.BottomStart)
@@ -807,7 +922,7 @@ fun HomeSearchScreen(
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "Tap to direct play",
+                                    text = "Play",
                                     color = Color.White,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Medium
@@ -879,7 +994,12 @@ fun HomeSearchScreen(
                                     }
                                 }
 
-                                // Search results download button -> FAB style with Square background (14dp rounded corner) and Download icon
+                                // Search results download button with dynamic Circular Progress Indicator
+                                val activeTasks by vm.activeTasks.collectAsState()
+                                val activeTask = activeTasks.values.firstOrNull { it.id == item.id || it.title == item.title }
+                                val itemProgress = activeTask?.progress
+                                val isItemDownloading = itemProgress != null && itemProgress in 0.1f..99.9f
+
                                 FilledIconButton(
                                     onClick = { handleTargetSelection(item.url) },
                                     shape = RoundedCornerShape(14.dp),
@@ -891,12 +1011,31 @@ fun HomeSearchScreen(
                                         .size(46.dp)
                                         .testTag("btn_item_download_${item.id}")
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Download,
-                                        contentDescription = "Download",
-                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        modifier = Modifier.size(22.dp)
-                                    )
+                                    if (isItemDownloading) {
+                                        val p = (itemProgress ?: 0f) / 100f
+                                        Box(contentAlignment = Alignment.Center) {
+                                            CircularProgressIndicator(
+                                                progress = { p },
+                                                modifier = Modifier.size(32.dp),
+                                                color = MaterialTheme.colorScheme.primary,
+                                                strokeWidth = 3.dp,
+                                                trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                                            )
+                                            Text(
+                                                text = "${(itemProgress ?: 0f).toInt()}%",
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                        }
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.Download,
+                                            contentDescription = "Download",
+                                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -943,6 +1082,8 @@ fun HomeSearchScreen(
 
     // Dialog Trigger for Universal Download Sheet
     if (selectedMediaData != null) {
+        val activeTasks by vm.activeTasks.collectAsState()
+        val currentMediaTask = activeTasks.values.firstOrNull { it.title == selectedMediaData?.title }
         UniversalDownloadSheet(
             media = selectedMediaData!!,
             onDismiss = { selectedMediaData = null },
@@ -958,7 +1099,8 @@ fun HomeSearchScreen(
                 selectedMediaData = null
                 // Trigger background download via ViewModel
                 triggerDownloadTask(data.webUrl, height, isAudio, bitrate, data.title, data.thumbnail)
-            }
+            },
+            downloadProgress = currentMediaTask?.progress
         )
     }
 
@@ -988,6 +1130,7 @@ fun HomeSearchScreen(
             vm = vm
         )
     }
+}
 }
 
 // ================= 2. ACTIVE TASKS SCREEN =================
@@ -1042,9 +1185,9 @@ fun TasksListScreen(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(horizontal = 14.dp, vertical = 6.dp)
             .testTag("tasks_list"),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(tasks, key = { it.id }) { task ->
             val isPaused = pausedTaskIds.contains(task.id)
@@ -1053,21 +1196,23 @@ fun TasksListScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("task_card_${task.id}"),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(12.dp),
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Aesthetic Art Cover with Pause/Resume Button & Progress Indicator overlay
+                    // Small thumbnail with pause / resume indicator
                     Box(
                         modifier = Modifier
-                            .size(76.dp)
-                            .clip(RoundedCornerShape(14.dp))
+                            .size(46.dp)
+                            .clip(RoundedCornerShape(10.dp))
                             .background(MaterialTheme.colorScheme.surfaceVariant),
                         contentAlignment = Alignment.Center
                     ) {
@@ -1083,32 +1228,31 @@ fun TasksListScreen(
                                 imageVector = Icons.Outlined.Downloading,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(30.dp)
+                                modifier = Modifier.size(22.dp)
                             )
                         }
 
-                        // Subtle dark gradient scrim for aesthetic contrast
+                        // Subtle dark scrim
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .background(Color.Black.copy(alpha = 0.38f))
+                                .background(Color.Black.copy(alpha = 0.32f))
                         )
 
-                        // Circular Progress Indicator hugging the action button
+                        // Circular Progress Indicator around play/pause
                         CircularProgressIndicator(
                             progress = { (task.progress / 100f).coerceIn(0f, 1f) },
-                            modifier = Modifier.size(46.dp),
+                            modifier = Modifier.size(34.dp),
                             color = MaterialTheme.colorScheme.primary,
-                            trackColor = Color.White.copy(alpha = 0.25f),
-                            strokeWidth = 3.dp
+                            trackColor = Color.White.copy(alpha = 0.2f),
+                            strokeWidth = 2.5.dp
                         )
 
-                        // Tap to Stop / Resume button placed right over the art cover
                         Surface(
                             shape = CircleShape,
-                            color = Color.Black.copy(alpha = 0.55f),
+                            color = Color.Black.copy(alpha = 0.6f),
                             modifier = Modifier
-                                .size(34.dp)
+                                .size(24.dp)
                                 .clickable {
                                     pausedTaskIds = if (isPaused) {
                                         pausedTaskIds - task.id
@@ -1121,35 +1265,17 @@ fun TasksListScreen(
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
-                                    contentDescription = if (isPaused) "Resume download" else "Pause download",
+                                    contentDescription = if (isPaused) "Resume" else "Pause",
                                     tint = Color.White,
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(13.dp)
                                 )
                             }
                         }
-
-                        // Bottom progress % pill over the art cover
-                        Surface(
-                            shape = RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp),
-                            color = Color.Black.copy(alpha = 0.72f),
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .fillMaxWidth()
-                        ) {
-                            Text(
-                                text = if (isPaused) "Paused" else "${task.progress.toInt()}%",
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isPaused) Color(0xFFFBBF24) else Color.White,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                modifier = Modifier.padding(vertical = 1.dp)
-                            )
-                        }
                     }
 
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
 
-                    // Details Column: Clean M3 typography without text background
+                    // Slim details column
                     Column(modifier = Modifier.weight(1f)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -1159,9 +1285,9 @@ fun TasksListScreen(
                             Text(
                                 text = task.title,
                                 color = MaterialTheme.colorScheme.onSurface,
-                                fontSize = 14.sp,
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                maxLines = 2,
+                                maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f)
                             )
@@ -1169,32 +1295,32 @@ fun TasksListScreen(
                             IconButton(
                                 onClick = { onCancelTask(task.id) },
                                 modifier = Modifier
-                                    .size(32.dp)
+                                    .size(26.dp)
                                     .testTag("cancel_task_${task.id}")
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Close,
                                     contentDescription = "Cancel download",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                                    modifier = Modifier.size(18.dp)
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
 
-                        // Linear progress bar matching M3 aesthetic
+                        // Slim M3 linear progress bar
                         LinearProgressIndicator(
                             progress = { (task.progress / 100f).coerceIn(0f, 1f) },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(5.dp)
-                                .clip(RoundedCornerShape(3.dp)),
+                                .height(3.5.dp)
+                                .clip(RoundedCornerShape(2.dp)),
                             color = if (isPaused) Color(0xFFFBBF24) else MaterialTheme.colorScheme.primary,
                             trackColor = MaterialTheme.colorScheme.surfaceVariant
                         )
 
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(3.dp))
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -1202,17 +1328,17 @@ fun TasksListScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = if (isPaused) "Download paused" else "Downloading • ${task.progress.toInt()}%",
+                                text = if (isPaused) "Paused" else "${task.progress.toInt()}%",
                                 color = if (isPaused) Color(0xFFFBBF24) else MaterialTheme.colorScheme.primary,
                                 fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium
+                                fontWeight = FontWeight.Bold
                             )
 
                             if (task.speed.isNotBlank()) {
                                 Text(
                                     text = task.speed,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 11.sp
+                                    fontSize = 10.5.sp
                                 )
                             }
                         }
@@ -1464,24 +1590,31 @@ fun LibraryHistoryScreen(
 @Composable
 fun StreamPlayer(url: String) {
     val context = LocalContext.current
-    var hasError by remember(url) { mutableStateOf(false) }
-    val player = remember(url) {
+    var hasError by remember { mutableStateOf(false) }
+    val player = remember {
         ExoPlayer.Builder(context).build().apply {
             addListener(object : androidx.media3.common.Player.Listener {
                 override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                     hasError = true
                 }
             })
-            try {
-                setMediaItem(MediaItem.fromUri(Uri.parse(url)))
-                prepare()
-                playWhenReady = true
-            } catch (e: Exception) {
-                hasError = true
-            }
         }
     }
-    DisposableEffect(url) {
+
+    LaunchedEffect(url) {
+        hasError = false
+        try {
+            player.stop()
+            player.clearMediaItems()
+            player.setMediaItem(MediaItem.fromUri(Uri.parse(url)))
+            player.prepare()
+            player.playWhenReady = true
+        } catch (e: Exception) {
+            hasError = true
+        }
+    }
+
+    DisposableEffect(Unit) {
         onDispose { player.release() }
     }
     Box(modifier = Modifier.fillMaxSize()) {

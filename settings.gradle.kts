@@ -23,6 +23,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Remix Seal"
+rootProject.name = "Xtube"
 
 include(":app")

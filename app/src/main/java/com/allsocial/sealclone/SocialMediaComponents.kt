@@ -40,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.testTag
@@ -47,12 +48,13 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * Compact, small-style search and URL input box.
+ * Centered search and URL input box with aesthetic rounded surface and high-contrast controls.
  */
 @Composable
 fun SmallSearchUrlBox(
@@ -66,178 +68,206 @@ fun SmallSearchUrlBox(
     modifier: Modifier = Modifier
 ) {
     val actualPaste = if (onPaste != onPasteClick && onPaste != {}) onPaste else onPasteClick
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(50.dp)
-            .testTag("small_search_url_box"),
-        shape = RoundedCornerShape(26.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)),
-        tonalElevation = 1.dp
+
+    Box(
+        modifier = modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center
     ) {
-        Row(
+        Surface(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .fillMaxWidth()
+                .height(52.dp)
+                .shadow(
+                    elevation = 6.dp,
+                    shape = RoundedCornerShape(26.dp),
+                    spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                    ambientColor = Color.Black.copy(alpha = 0.08f)
+                )
+                .testTag("small_search_url_box"),
+            shape = RoundedCornerShape(26.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
+            tonalElevation = 3.dp
         ) {
-            // Icon at start: Link if empty, Search if text present
-            Icon(
-                imageVector = if (value.isBlank()) Icons.Default.Link else Icons.Default.Search,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp)
-            )
-
-            Spacer(modifier = Modifier.width(10.dp))
-
-            // Text input field
-            Box(
-                modifier = Modifier.weight(1f),
-                contentAlignment = Alignment.CenterStart
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                if (value.isEmpty()) {
-                    Text(
-                        text = placeholder,
-                        fontSize = 13.5.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                // Centered Icon background pill
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (value.isBlank()) Icons.Default.Link else Icons.Default.Search,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
 
-                BasicTextField(
-                    value = value,
-                    onValueChange = onValueChange,
-                    singleLine = true,
-                    textStyle = TextStyle(
-                        fontSize = 13.5.sp,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.Normal
+                Spacer(modifier = Modifier.width(10.dp))
+
+                // Centered input text box
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    if (value.isEmpty()) {
+                        Text(
+                            text = placeholder,
+                            fontSize = 13.5.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    BasicTextField(
+                        value = value,
+                        onValueChange = onValueChange,
+                        singleLine = true,
+                        textStyle = TextStyle(
+                            fontSize = 13.5.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Medium
+                        ),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { onSearch() }),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("input_search_url")
+                    )
+                }
+
+                // Clear action button
+                if (value.isNotEmpty()) {
+                    IconButton(
+                        onClick = onClear,
+                        modifier = Modifier
+                            .size(30.dp)
+                            .testTag("btn_search_clear")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Clear",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(2.dp))
+                }
+
+                // Compact Paste Button with aesthetic background
+                Surface(
+                    onClick = actualPaste,
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier
+                        .height(34.dp)
+                        .testTag("btn_search_paste")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.ContentPaste,
+                            contentDescription = "Paste",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Paste",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                // Submit / Search Action Button
+                FilledIconButton(
+                    onClick = onSearch,
+                    shape = CircleShape,
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
-                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { onSearch() }),
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("input_search_url")
-                )
-            }
-
-            // Clear text button if input exists
-            if (value.isNotEmpty()) {
-                IconButton(
-                    onClick = onClear,
-                    modifier = Modifier
-                        .size(28.dp)
-                        .testTag("btn_search_clear")
+                        .size(36.dp)
+                        .testTag("btn_search_submit")
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Clear",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp)
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search or Download",
+                        modifier = Modifier.size(18.dp)
                     )
                 }
-                Spacer(modifier = Modifier.width(4.dp))
-            }
-
-            // Compact Paste Button
-            Surface(
-                onClick = actualPaste,
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier
-                    .height(32.dp)
-                    .testTag("btn_search_paste")
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.ContentPaste,
-                        contentDescription = "Paste",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(13.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "Paste",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(6.dp))
-
-            // Action / Search / Go button
-            FilledIconButton(
-                onClick = onSearch,
-                shape = CircleShape,
-                colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                ),
-                modifier = Modifier
-                    .size(34.dp)
-                    .testTag("btn_search_submit")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = "Search or Download",
-                    modifier = Modifier.size(17.dp)
-                )
             }
         }
     }
 }
 
 /**
- * Social media platform icons row placed below the search box.
- * Displays only authentic small-size SVG original brand icons without any text labels,
- * styled in modern Material Design 3 surface containers.
+ * Centered Social media platform icons row.
+ * Centered horizontally with aesthetic Material Design 3 container backgrounds for all SVG icons.
  */
 @Composable
 fun SocialMediaPlatformsBar(
     onPlatformClick: (SocialPlatformInfo) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    LazyRow(
-        modifier = modifier
-            .fillMaxWidth()
-            .testTag("social_media_platforms_row"),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+    Box(
+        modifier = modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center
     ) {
-        items(SocialPlatformRegistry.platforms) { platform ->
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp),
-                tonalElevation = 2.dp,
-                shadowElevation = 1.dp,
-                border = BorderStroke(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
-                ),
-                modifier = Modifier
-                    .size(42.dp)
-                    .clickable { onPlatformClick(platform) }
-                    .testTag("social_platform_${platform.id}")
-            ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.fillMaxSize()
+        LazyRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("social_media_platforms_row"),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+        ) {
+            items(SocialPlatformRegistry.platforms) { platform ->
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 3.dp,
+                    shadowElevation = 2.dp,
+                    border = BorderStroke(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                    ),
+                    modifier = Modifier
+                        .padding(horizontal = 4.dp)
+                        .size(46.dp)
+                        .clickable { onPlatformClick(platform) }
+                        .testTag("social_platform_${platform.id}")
                 ) {
-                    Icon(
-                        painter = painterResource(id = platform.iconRes),
-                        contentDescription = platform.name,
-                        tint = Color.Unspecified, // Uses the original SVG vector colors
-                        modifier = Modifier.size(22.dp)
-                    )
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                    ) {
+                        Icon(
+                            painter = painterResource(id = platform.iconRes),
+                            contentDescription = platform.name,
+                            tint = Color.Unspecified, // Authentic SVG original vector colors
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                 }
             }
         }
@@ -245,15 +275,7 @@ fun SocialMediaPlatformsBar(
 }
 
 /**
- * Helper to get M3 surface color at elevation without importing internal experimental APIs.
- */
-@Composable
-private fun androidx.compose.material3.ColorScheme.surfaceColorAtElevation(elevation: androidx.compose.ui.unit.Dp): Color {
-    return if (elevation == 0.dp) surface else surfaceVariant.copy(alpha = 0.6f)
-}
-
-/**
- * Empty-state informational card highlighting universal social media capability.
+ * Empty-state informational card highlighting universal media capability.
  */
 @Composable
 fun SocialMediaCapabilitiesCard(
@@ -261,50 +283,51 @@ fun SocialMediaCapabilitiesCard(
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+            containerColor = MaterialTheme.colorScheme.surface
         ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
-                text = "Universal Media Downloader",
-                fontSize = 14.sp,
+                text = "Xtube Universal Downloader",
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )
             Text(
-                text = "Download video and audio directly in high fidelity:",
-                fontSize = 12.5.sp,
-                color = MaterialTheme.colorScheme.onSurface
+                text = "High-speed video & studio audio downloads with direct stream preview:",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
                     modifier = Modifier.weight(1f)
                 ) {
-                    Column(modifier = Modifier.padding(8.dp)) {
-                        Text("Video Formats", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                        Text("4K, 1080p, 720p MP4", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text("Video Qualities", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text("4K, 1080p, 720p, 480p", fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
                     }
                 }
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
                     modifier = Modifier.weight(1f)
                 ) {
-                    Column(modifier = Modifier.padding(8.dp)) {
-                        Text("Audio Formats", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                        Text("320k, 192k, 64k MP3", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text("Audio Qualities", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                        Text("320k, 256k, 192k, 128k", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f))
                     }
                 }
             }

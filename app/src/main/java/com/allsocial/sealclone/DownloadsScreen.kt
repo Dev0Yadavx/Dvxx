@@ -1,6 +1,7 @@
 package com.allsocial.sealclone
 
 import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -24,16 +25,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 enum class MediaCategoryFilter {
     ALL, VIDEOS, AUDIO
@@ -56,9 +60,9 @@ fun DownloadsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    val downloadedHistory by vm.downloadedHistory.collectAsState()
     var mediaList by remember { mutableStateOf<List<DownloadedMedia>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
-    var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf(MediaCategoryFilter.ALL) }
     var selectedSort by remember { mutableStateOf(MediaSortOrder.NEWEST) }
     var itemToDelete by remember { mutableStateOf<DownloadedMedia?>(null) }
@@ -67,21 +71,113 @@ fun DownloadsScreen(
     var activeMedia by remember { mutableStateOf<DownloadedMedia?>(null) }
     var isPlayerMinimized by remember { mutableStateOf(false) }
 
-    // Load media from MediaStore
-    fun loadMedia() {
+    // Load ONLY downloaded content from Xtube (tracked history & app downloads)
+    fun loadAppDownloadedContent() {
         isLoading = true
-        scope.launch {
-            mediaList = MediaStoreHelper.queryAllMedia(context)
-            isLoading = false
+        scope.launch(Dispatchers.IO) {
+            val list = mutableListOf<DownloadedMedia>()
+            val seenPaths = mutableSetOf<String>()
+
+            // 1. Process tracked records from ViewModel history
+            downloadedHistory.forEach { record ->
+                val file = File(record.filePath)
+                if (file.exists() && seenPaths.add(file.absolutePath)) {
+                    val isVideo = record.ext.equals("mp4", ignoreCase = true) ||
+                            record.ext.equals("mkv", ignoreCase = true) ||
+                            record.ext.equals("webm", ignoreCase = true)
+
+                    val uri = try {
+                        FileProvider.getUriForFile(
+                            context,
+                            "${context.packageName}.provider",
+                            file
+                        )
+                    } catch (e: Exception) {
+                        Uri.fromFile(file)
+                    }
+
+                    list.add(
+                        DownloadedMedia(
+                            id = file.absolutePath.hashCode().toLong(),
+                            uri = uri,
+                            filePath = file.absolutePath,
+                            displayName = file.name,
+                            title = record.title.ifBlank { file.nameWithoutExtension },
+                            artist = "Xtube",
+                            sizeBytes = file.length(),
+                            durationMs = 0L,
+                            dateModified = file.lastModified() / 1000L,
+                            mimeType = if (isVideo) "video/${record.ext}" else "audio/${record.ext}",
+                            isVideo = isVideo,
+                            thumbnailUri = if (record.thumbnail.isNotBlank()) Uri.parse(record.thumbnail) else null
+                        )
+                    )
+                }
+            }
+
+            // 2. Scan downloads directory for files downloaded by Xtube/Seal
+            try {
+                val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                val sealDir = File(downloadsDir, "Seal")
+                val xtubeDir = File(downloadsDir, "Xtube")
+                val searchDirs = listOfNotNull(downloadsDir, sealDir, xtubeDir).filter { it.exists() }
+
+                searchDirs.forEach { dir ->
+                    dir.listFiles { f ->
+                        f.isFile && (f.name.endsWith(".mp4", ignoreCase = true) ||
+                                f.name.endsWith(".mkv", ignoreCase = true) ||
+                                f.name.endsWith(".webm", ignoreCase = true) ||
+                                f.name.endsWith(".mp3", ignoreCase = true) ||
+                                f.name.endsWith(".m4a", ignoreCase = true) ||
+                                f.name.endsWith(".opus", ignoreCase = true))
+                    }?.forEach { file ->
+                        if (seenPaths.add(file.absolutePath)) {
+                            val ext = file.extension.lowercase()
+                            val isVideo = ext == "mp4" || ext == "mkv" || ext == "webm"
+                            val uri = try {
+                                FileProvider.getUriForFile(
+                                    context,
+                                    "${context.packageName}.provider",
+                                    file
+                                )
+                            } catch (e: Exception) {
+                                Uri.fromFile(file)
+                            }
+                            list.add(
+                                DownloadedMedia(
+                                    id = file.absolutePath.hashCode().toLong(),
+                                    uri = uri,
+                                    filePath = file.absolutePath,
+                                    displayName = file.name,
+                                    title = file.nameWithoutExtension,
+                                    artist = "Xtube Download",
+                                    sizeBytes = file.length(),
+                                    durationMs = 0L,
+                                    dateModified = file.lastModified() / 1000L,
+                                    mimeType = if (isVideo) "video/$ext" else "audio/$ext",
+                                    isVideo = isVideo
+                                )
+                            )
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // Ignore
+            }
+
+            withContext(Dispatchers.Main) {
+                mediaList = list
+                isLoading = false
+            }
         }
     }
 
-    LaunchedEffect(Unit) {
-        loadMedia()
+    LaunchedEffect(downloadedHistory) {
+        loadAppDownloadedContent()
     }
 
     // Filter and sort items
-    val filteredList = remember(mediaList, searchQuery, selectedCategory, selectedSort) {
+    val filteredList = remember(mediaList, selectedCategory, selectedSort) {
         var result = mediaList
 
         // Filter by category
@@ -89,17 +185,6 @@ fun DownloadsScreen(
             MediaCategoryFilter.ALL -> result
             MediaCategoryFilter.VIDEOS -> result.filter { it.isVideo }
             MediaCategoryFilter.AUDIO -> result.filter { !it.isVideo }
-        }
-
-        // Filter by search query
-        if (searchQuery.isNotBlank()) {
-            val q = searchQuery.trim().lowercase()
-            result = result.filter {
-                it.title.lowercase().contains(q) ||
-                        it.displayName.lowercase().contains(q) ||
-                        it.artist.lowercase().contains(q) ||
-                        it.extension.lowercase().contains(q)
-            }
         }
 
         // Sort items
@@ -130,7 +215,7 @@ fun DownloadsScreen(
                 .fillMaxSize()
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            // Header Row: Title & Total Info & Refresh
+            // Header Row: Title & Total Info (Refresh icon removed as requested)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -142,56 +227,16 @@ fun DownloadsScreen(
                     Text(
                         text = "Downloads",
                         fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.ExtraBold,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "${mediaList.size} items • $totalFormattedSize in storage",
+                        text = "${mediaList.size} downloaded items • $totalFormattedSize",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-
-                FilledTonalIconButton(
-                    onClick = { loadMedia() },
-                    modifier = Modifier.testTag("refresh_downloads_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = "Refresh MediaStore",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
             }
-
-            // Search Bar
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 10.dp)
-                    .testTag("search_downloads_input"),
-                placeholder = { Text("Search downloaded files...", fontSize = 13.sp) },
-                leadingIcon = {
-                    Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Default.Clear, contentDescription = "Clear search", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                },
-                shape = RoundedCornerShape(16.dp),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.surfaceVariant,
-                    focusedContainerColor = MaterialTheme.colorScheme.surface,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surface
-                )
-            )
 
             // Category Filter & Sort Chips Row
             Row(
@@ -208,7 +253,7 @@ fun DownloadsScreen(
                     label = { Text("All (${mediaList.size})", fontSize = 12.sp) },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = MaterialTheme.colorScheme.primary,
-                        selectedLabelColor = Color.Black
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary
                     ),
                     modifier = Modifier.testTag("chip_category_all")
                 )
@@ -222,7 +267,7 @@ fun DownloadsScreen(
                     },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = MaterialTheme.colorScheme.primary,
-                        selectedLabelColor = Color.Black
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary
                     ),
                     modifier = Modifier.testTag("chip_category_videos")
                 )
@@ -236,7 +281,7 @@ fun DownloadsScreen(
                     },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = MaterialTheme.colorScheme.primary,
-                        selectedLabelColor = Color.Black
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary
                     ),
                     modifier = Modifier.testTag("chip_category_audio")
                 )
@@ -261,59 +306,46 @@ fun DownloadsScreen(
                 ) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
                         modifier = Modifier.padding(24.dp)
                     ) {
                         Surface(
                             shape = CircleShape,
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier.size(72.dp)
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                            modifier = Modifier.size(80.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
-                                    imageVector = Icons.Outlined.DownloadDone,
+                                    imageVector = Icons.Default.DownloadDone,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(36.dp)
+                                    modifier = Modifier.size(40.dp)
                                 )
                             }
                         }
-
                         Spacer(modifier = Modifier.height(16.dp))
-
                         Text(
-                            text = if (searchQuery.isNotEmpty()) "No matching downloads" else "No finished downloads found",
+                            text = "No downloaded media yet",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
+                            fontSize = 17.sp,
                             color = MaterialTheme.colorScheme.onSurface
                         )
-
                         Spacer(modifier = Modifier.height(6.dp))
-
                         Text(
-                            text = if (searchQuery.isNotEmpty()) "Try adjusting your search terms or filters"
-                            else "Files downloaded from social links will appear here automatically via MediaStore.",
+                            text = "Downloaded videos and audios from Xtube will appear here",
                             fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 18.sp
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-
                         Spacer(modifier = Modifier.height(20.dp))
-
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Button(
-                                onClick = onNavigateHome,
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                            ) {
-                                Icon(Icons.Default.Search, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Find Media", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            }
-
-                            OutlinedButton(onClick = { loadMedia() }) {
-                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Scan MediaStore", fontSize = 13.sp)
-                            }
+                        Button(
+                            onClick = onNavigateHome,
+                            shape = RoundedCornerShape(20.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                            modifier = Modifier.testTag("btn_downloads_go_home")
+                        ) {
+                            Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Download Media", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -321,29 +353,25 @@ fun DownloadsScreen(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f)
-                        .testTag("downloads_list"),
+                        .weight(1f),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
-                    contentPadding = PaddingValues(bottom = if (activeMedia != null) 90.dp else 16.dp)
+                    contentPadding = PaddingValues(bottom = 90.dp)
                 ) {
-                    items(filteredList, key = { "${it.id}_${it.filePath}" }) { item ->
+                    items(filteredList, key = { it.id }) { item ->
                         DownloadedMediaCard(
-                            item = item,
-                            isPlaying = activeMedia?.id == item.id,
-                            onPlay = {
+                            media = item,
+                            onClick = {
                                 activeMedia = item
                                 isPlayerMinimized = false
                             },
+                            onDelete = { itemToDelete = item },
                             onShare = {
                                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                    type = item.mimeType.ifBlank { if (item.isVideo) "video/*" else "audio/*" }
+                                    type = item.mimeType
                                     putExtra(Intent.EXTRA_STREAM, item.uri)
                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }
                                 context.startActivity(Intent.createChooser(shareIntent, "Share Media"))
-                            },
-                            onDelete = {
-                                itemToDelete = item
                             }
                         )
                     }
@@ -351,88 +379,100 @@ fun DownloadsScreen(
             }
         }
 
-        // Active ExoPlayer Overlay / Mini Player
-        activeMedia?.let { currentMedia ->
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-            ) {
-                IntegratedMediaPlayerSheet(
-                    media = currentMedia,
-                    isMinimized = isPlayerMinimized,
-                    onToggleMinimize = { isPlayerMinimized = !isPlayerMinimized },
-                    onClose = { activeMedia = null }
-                )
-            }
+        // In-App Player Overlay
+        activeMedia?.let { media ->
+            IntegratedMediaPlayerSheet(
+                media = media,
+                isMinimized = isPlayerMinimized,
+                onToggleMinimize = { isPlayerMinimized = !isPlayerMinimized },
+                onClose = { activeMedia = null }
+            )
         }
-    }
 
-    // Delete Confirmation Dialog
-    itemToDelete?.let { targetItem ->
-        AlertDialog(
-            onDismissRequest = { itemToDelete = null },
-            title = { Text("Delete Downloaded File?") },
-            text = {
-                Text(
-                    "Are you sure you want to delete '${targetItem.title}'?\nThis will remove the file permanently from storage and MediaStore.",
-                    fontSize = 13.sp
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        scope.launch {
-                            val deleted = MediaStoreHelper.deleteMedia(context, targetItem)
-                            if (deleted) {
-                                if (activeMedia?.id == targetItem.id) {
-                                    activeMedia = null
-                                }
-                                loadMedia()
-                                Toast.makeText(context, "Deleted: ${targetItem.title}", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(context, "Unable to delete file", Toast.LENGTH_SHORT).show()
+        // Delete Confirmation Dialog
+        itemToDelete?.let { item ->
+            AlertDialog(
+                onDismissRequest = { itemToDelete = null },
+                icon = {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                },
+                title = { Text("Delete Download?") },
+                text = {
+                    Text(
+                        "Are you sure you want to delete \"${item.title}\"? This will permanently remove the file from storage.",
+                        fontSize = 13.5.sp
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val targetFile = File(item.filePath)
+                            if (targetFile.exists()) {
+                                targetFile.delete()
+                            }
+                            try {
+                                context.contentResolver.delete(item.uri, null, null)
+                            } catch (_: Exception) {}
+
+                            // Update ViewModel history
+                            vm.removeRecord(
+                                DownloadedRecord(
+                                    title = item.title,
+                                    filePath = item.filePath,
+                                    thumbnail = "",
+                                    quality = "",
+                                    ext = item.extension,
+                                    fileSize = item.formattedSize
+                                )
+                            )
+
+                            mediaList = mediaList.filter { it.id != item.id }
+                            if (activeMedia?.id == item.id) {
+                                activeMedia = null
                             }
                             itemToDelete = null
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text("Delete", color = MaterialTheme.colorScheme.onError, fontWeight = FontWeight.Bold)
+                            Toast.makeText(context, "Deleted successfully", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Text("Delete")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { itemToDelete = null }) {
+                        Text("Cancel")
+                    }
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { itemToDelete = null }) {
-                    Text("Cancel")
-                }
-            }
-        )
+            )
+        }
     }
 }
 
+/**
+ * Material 3 Downloaded Media Item Card
+ */
 @Composable
 fun DownloadedMediaCard(
-    item: DownloadedMedia,
-    isPlaying: Boolean,
-    onPlay: () -> Unit,
-    onShare: () -> Unit,
+    media: DownloadedMedia,
+    onClick: () -> Unit,
     onDelete: () -> Unit,
+    onShare: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var showMenu by remember { mutableStateOf(false) }
-
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .clickable { onPlay() }
-            .testTag("media_card_${item.id}"),
+            .clickable { onClick() }
+            .testTag("media_card_${media.id}"),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isPlaying) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-            else MaterialTheme.colorScheme.surface
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isPlaying) 3.dp else 1.dp),
-        border = if (isPlaying) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
     ) {
         Row(
             modifier = Modifier
@@ -440,215 +480,101 @@ fun DownloadedMediaCard(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Aesthetic Art Cover with Play Action & Badges Overlay
+            // Thumbnail / Icon Box
             Box(
                 modifier = Modifier
-                    .size(72.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(
-                        if (item.isVideo) Color(0xFF1E293B)
-                        else MaterialTheme.colorScheme.primaryContainer
-                    ),
+                    .size(54.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)),
                 contentAlignment = Alignment.Center
             ) {
-                AsyncImage(
-                    model = item.thumbnailUri ?: item.uri,
-                    contentDescription = item.title,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                    error = rememberVectorPainter(
-                        if (item.isVideo) Icons.Default.Videocam else Icons.Default.MusicNote
-                    ),
-                    placeholder = rememberVectorPainter(
-                        if (item.isVideo) Icons.Default.Videocam else Icons.Default.MusicNote
+                if (media.thumbnailUri != null) {
+                    AsyncImage(
+                        model = media.thumbnailUri,
+                        contentDescription = media.title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
                     )
-                )
-
-                // Dark aesthetic scrim
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = if (isPlaying) 0.45f else 0.28f))
-                )
-
-                // Play / Equalizer icon button centered on the art cover
-                Surface(
-                    shape = CircleShape,
-                    color = if (isPlaying) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.55f),
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Default.Equalizer else Icons.Default.PlayArrow,
-                            contentDescription = "Play media directly",
-                            tint = if (isPlaying) Color.Black else Color.White,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-
-                // File type badge on top-left of art cover
-                Surface(
-                    shape = RoundedCornerShape(bottomEnd = 6.dp),
-                    color = Color.Black.copy(alpha = 0.75f),
-                    modifier = Modifier.align(Alignment.TopStart)
-                ) {
-                    Text(
-                        text = item.extension.uppercase(),
-                        fontSize = 8.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                } else {
+                    Icon(
+                        imageVector = if (media.isVideo) Icons.Default.PlayArrow else Icons.Default.MusicNote,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(28.dp)
                     )
-                }
-
-                // Duration badge at bottom-end of art cover
-                if (item.durationMs > 0) {
-                    Surface(
-                        shape = RoundedCornerShape(topStart = 6.dp),
-                        color = Color.Black.copy(alpha = 0.8f),
-                        modifier = Modifier.align(Alignment.BottomEnd)
-                    ) {
-                        Text(
-                            text = item.formattedDuration,
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color.White,
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                        )
-                    }
                 }
             }
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Details Column - clean M3 typography, no text background
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = item.title,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    text = media.title,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
+                Spacer(modifier = Modifier.height(3.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                    ) {
+                        Text(
+                            text = media.extension,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                        )
+                    }
                     Text(
-                        text = item.extension.uppercase(),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                        text = media.formattedSize,
+                        fontSize = 11.5.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-
                     Text(
                         text = "•",
                         fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                     )
-
                     Text(
-                        text = item.formattedSize,
-                        fontSize = 11.sp,
+                        text = media.formattedDate,
+                        fontSize = 11.5.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    if (item.formattedDate.isNotEmpty()) {
-                        Text(
-                            text = "•",
-                            fontSize = 10.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = item.formattedDate,
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-
-                if (item.artist.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = item.artist,
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.primary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
 
-            // 3-dot overflow menu for actions (Open, Share, Delete)
-            Box {
-                IconButton(
-                    onClick = { showMenu = true },
-                    modifier = Modifier
-                        .size(36.dp)
-                        .testTag("media_menu_${item.id}")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "Media options",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+            // Share button
+            IconButton(
+                onClick = onShare,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Share,
+                    contentDescription = "Share",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
 
-                DropdownMenu(
-                    expanded = showMenu,
-                    onDismissRequest = { showMenu = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Open / Play") },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        },
-                        onClick = {
-                            showMenu = false
-                            onPlay()
-                        }
-                    )
-
-                    DropdownMenuItem(
-                        text = { Text("Share") },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Share,
-                                contentDescription = null
-                            )
-                        },
-                        onClick = {
-                            showMenu = false
-                            onShare()
-                        }
-                    )
-
-                    DropdownMenuItem(
-                        text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.DeleteOutline,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        },
-                        onClick = {
-                            showMenu = false
-                            onDelete()
-                        }
-                    )
-                }
+            // Delete button
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DeleteOutline,
+                    contentDescription = "Delete",
+                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                    modifier = Modifier.size(18.dp)
+                )
             }
         }
     }

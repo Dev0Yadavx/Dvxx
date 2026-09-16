@@ -12,12 +12,12 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -25,6 +25,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -66,11 +67,21 @@ class QuickDownloadActivity : ComponentActivity() {
         val isDarkMode = prefs.getBoolean("pref_dark_mode", true)
 
         setContent {
-            val colorScheme = if (isDarkMode) darkColorScheme() else lightColorScheme()
+            var dynamicColor by remember { mutableStateOf<Color?>(null) }
+            val colorScheme = remember(isDarkMode, dynamicColor) {
+                if (dynamicColor != null) {
+                    DynamicThemeEngine.buildDynamicColorScheme(dynamicColor!!, isDarkMode)
+                } else if (isDarkMode) {
+                    darkColorScheme()
+                } else {
+                    lightColorScheme()
+                }
+            }
 
             MaterialTheme(colorScheme = colorScheme) {
-                QuickDownloadPopupDialog(
+                DownloadPopupDialog(
                     initialUrl = url,
+                    onColorExtracted = { dynamicColor = it },
                     onDismiss = { finish() },
                     onStartDownload = { chosenOption, mediaTitle, mediaThumb ->
                         val taskId = System.currentTimeMillis().toString()
@@ -98,8 +109,9 @@ class QuickDownloadActivity : ComponentActivity() {
 }
 
 @Composable
-fun QuickDownloadPopupDialog(
+fun DownloadPopupDialog(
     initialUrl: String,
+    onColorExtracted: (Color) -> Unit = {},
     onDismiss: () -> Unit,
     onStartDownload: (QuickDownloadOption, String, String) -> Unit
 ) {
@@ -109,41 +121,27 @@ fun QuickDownloadPopupDialog(
     var isLoadingInfo by remember { mutableStateOf(true) }
     var parsedMedia by remember { mutableStateOf<ParsedMediaData?>(null) }
 
-    // Standard 5 Bitrates
     val audioOptions = remember {
         listOf(
-            QuickDownloadOption("a_320", "320 kbps", "320 kbps MP3", "bestaudio/best", true, "~9.5 MB", bitrate = "320K"),
-            QuickDownloadOption("a_256", "256 kbps", "256 kbps MP3", "bestaudio/best", true, "~7.8 MB", bitrate = "256K"),
-            QuickDownloadOption("a_192", "192 kbps", "192 kbps MP3", "bestaudio/best", true, "~5.8 MB", bitrate = "192K"),
-            QuickDownloadOption("a_128", "128 kbps", "128 kbps MP3", "bestaudio/best", true, "~3.9 MB", bitrate = "128K"),
-            QuickDownloadOption("a_64", "64 kbps", "64 kbps MP3", "bestaudio/best", true, "~2.1 MB", bitrate = "64K")
+            QuickDownloadOption("a_128", "Fast (128k)", "128k MP3", "bestaudio/best", true, "3.3 MB", bitrate = "128K"),
+            QuickDownloadOption("a_192", "Classic MP3 (192k)", "192k MP3", "bestaudio/best", true, "4.8 MB", bitrate = "192K"),
+            QuickDownloadOption("a_320", "HQ Audio (320k)", "320k MP3", "bestaudio/best", true, "9.2 MB", bitrate = "320K")
         )
     }
 
-    // Dynamic Video Heights extracted by DownloaderEngine.inspectUrl
-    val videoOptions = remember(parsedMedia) {
-        val heights = parsedMedia?.availableVideoHeights ?: listOf(2160, 1440, 1080, 720, 480, 360)
-        heights.map { h ->
-            val label = when {
-                h >= 2160 -> "4K ($h p)"
-                h >= 1440 -> "2K ($h p)"
-                h >= 1080 -> "1080p FHD"
-                h >= 720 -> "720p HD"
-                h >= 480 -> "480p SD"
-                else -> "${h}p"
-            }
-            val est = when {
-                h >= 2160 -> "~250 MB"
-                h >= 1440 -> "~150 MB"
-                h >= 1080 -> "~85 MB"
-                h >= 720 -> "~45 MB"
-                h >= 480 -> "~25 MB"
-                else -> "~12 MB"
-            }
+    val standardVideoOptions = remember(parsedMedia) {
+        val heights = parsedMedia?.availableVideoHeights ?: listOf(1080, 720, 480, 360)
+        val defaultList = listOf(
+            Triple(360, "Fast (360p)", "15.6 MB"),
+            Triple(480, "Standard (480p)", "28.4 MB"),
+            Triple(720, "High quality (720p)", "85.3 MB"),
+            Triple(1080, "Full HD (1080p)", "142.0 MB")
+        )
+        defaultList.map { (h, name, est) ->
             QuickDownloadOption(
                 id = "v_$h",
-                title = label,
-                label = "$label MP4",
+                title = name,
+                label = "$h p MP4",
                 format = "bestvideo[height<=$h]+bestaudio/best[height<=$h]/best",
                 isAudio = false,
                 estSize = est,
@@ -154,7 +152,7 @@ fun QuickDownloadPopupDialog(
 
     var selectedOption by remember {
         mutableStateOf(
-            QuickDownloadOption("v_720", "720p HD", "720p HD MP4", "bestvideo[height<=720]+bestaudio/best[height<=720]/best", false, "~45 MB", height = 720)
+            QuickDownloadOption("v_1080", "Full HD (1080p)", "1080p MP4", "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best", false, "142.0 MB", height = 1080)
         )
     }
 
@@ -162,9 +160,17 @@ fun QuickDownloadPopupDialog(
         scope.launch(Dispatchers.IO) {
             try {
                 val media = DownloaderEngine.inspectUrl(initialUrl)
+                if (media.thumbnail.isNotBlank()) {
+                    val extracted = DynamicThemeEngine.extractThemeFromThumbnail(context, media.thumbnail)
+                    if (extracted != null) {
+                        withContext(Dispatchers.Main) {
+                            onColorExtracted(extracted)
+                        }
+                    }
+                }
                 withContext(Dispatchers.Main) {
                     parsedMedia = media
-                    val defaultVideo = videoOptions.find { it.height == 720 || it.height == 1080 } ?: videoOptions.firstOrNull()
+                    val defaultVideo = standardVideoOptions.find { it.height == 1080 || it.height == 720 } ?: standardVideoOptions.lastOrNull()
                     if (defaultVideo != null) {
                         selectedOption = defaultVideo
                     }
@@ -178,7 +184,6 @@ fun QuickDownloadPopupDialog(
         }
     }
 
-    // Outer full-screen dim background (tapping dismisses)
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -200,10 +205,10 @@ fun QuickDownloadPopupDialog(
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
-                        onClick = { /* Prevent clicks from closing modal */ }
+                        onClick = { /* Do nothing */ }
                     )
-                    .testTag("card_quick_download_popup"),
-                shape = RoundedCornerShape(24.dp),
+                    .testTag("card_download_popup"),
+                shape = RoundedCornerShape(28.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 elevation = CardDefaults.cardElevation(defaultElevation = 14.dp)
             ) {
@@ -211,42 +216,26 @@ fun QuickDownloadPopupDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(20.dp)
+                        .verticalScroll(rememberScrollState())
                 ) {
-                    // Header with Close 'X' button
+                    // Header: "Download video as" & Close
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Download,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                text = "Quick Download",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
+                        Text(
+                            text = "Download video as",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
 
                         IconButton(
                             onClick = onDismiss,
                             modifier = Modifier
                                 .size(32.dp)
-                                .testTag("btn_close_quick_download")
+                                .testTag("btn_close_download_popup")
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Close,
@@ -256,12 +245,13 @@ fun QuickDownloadPopupDialog(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    // Media Info Card with Art Cover
+                    // Media Info Card
                     Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -277,20 +267,20 @@ fun QuickDownloadPopupDialog(
                                     contentDescription = "Thumbnail",
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier
-                                        .size(64.dp)
-                                        .clip(RoundedCornerShape(10.dp))
+                                        .size(56.dp)
+                                        .clip(RoundedCornerShape(12.dp))
                                 )
                             } else {
                                 Box(
                                     modifier = Modifier
-                                        .size(64.dp)
-                                        .clip(RoundedCornerShape(10.dp))
+                                        .size(56.dp)
+                                        .clip(RoundedCornerShape(12.dp))
                                         .background(MaterialTheme.colorScheme.surfaceVariant),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     if (isLoadingInfo) {
                                         CircularProgressIndicator(
-                                            modifier = Modifier.size(24.dp),
+                                            modifier = Modifier.size(22.dp),
                                             strokeWidth = 2.dp,
                                             color = MaterialTheme.colorScheme.primary
                                         )
@@ -308,170 +298,235 @@ fun QuickDownloadPopupDialog(
 
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = parsedMedia?.title ?: "Shared Media",
-                                    maxLines = 2,
+                                    text = parsedMedia?.title ?: "Inspecting Media...",
+                                    maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     fontWeight = FontWeight.SemiBold,
-                                    fontSize = 13.sp,
+                                    fontSize = 13.5.sp,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                if (isLoadingInfo) {
-                                    Text(
-                                        text = "Analyzing dynamic formats...",
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                } else {
-                                    Text(
-                                        text = "${parsedMedia?.uploader ?: "Social Media"} • Duration: ${parsedMedia?.duration ?: "00:00"}",
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Audio Qualities Section (All 5 bitrates)
-                    Text(
-                        text = "Audio Qualities (MP3 with Art & Tags)",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        audioOptions.forEach { opt ->
-                            val isSelected = selectedOption.id == opt.id
-                            Surface(
-                                onClick = { selectedOption = opt },
-                                shape = RoundedCornerShape(10.dp),
-                                color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                                border = BorderStroke(
-                                    width = if (isSelected) 2.dp else 1.dp,
-                                    color = if (isSelected) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                                ),
-                                modifier = Modifier
-                                    .width(96.dp)
-                                    .testTag("btn_opt_${opt.id}")
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    Text(
-                                        text = opt.title,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        fontSize = 11.sp,
-                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = opt.estSize,
-                                        fontSize = 10.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "${parsedMedia?.uploader ?: "Media"} • Duration: ${parsedMedia?.duration ?: "--:--"}",
+                                    fontSize = 11.5.sp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                         }
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Video Qualities Section (Dynamic extracted heights)
+                    // 1. Music Section
                     Text(
-                        text = "Video Qualities (MP4 Dynamic Resolutions)",
-                        fontSize = 12.sp,
+                        text = "Music",
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        videoOptions.forEach { opt ->
+                        audioOptions.forEach { opt ->
                             val isSelected = selectedOption.id == opt.id
-                            Surface(
-                                onClick = { selectedOption = opt },
-                                shape = RoundedCornerShape(10.dp),
-                                color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                                border = BorderStroke(
-                                    width = if (isSelected) 2.dp else 1.dp,
-                                    color = if (isSelected) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                                ),
-                                modifier = Modifier
-                                    .width(100.dp)
-                                    .testTag("btn_opt_${opt.id}")
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    Text(
-                                        text = opt.title,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        fontSize = 11.sp,
-                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = opt.estSize,
-                                        fontSize = 10.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
+                            PopupQualityRow(
+                                icon = Icons.Default.MusicNote,
+                                title = opt.title,
+                                size = opt.estSize,
+                                isSelected = isSelected,
+                                onClick = { selectedOption = opt }
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // 2. Video Section
+                    Text(
+                        text = "Video",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        standardVideoOptions.forEach { opt ->
+                            val isSelected = selectedOption.id == opt.id
+                            PopupQualityRow(
+                                icon = Icons.Default.PlayArrow,
+                                title = opt.title,
+                                size = opt.estSize,
+                                isSelected = isSelected,
+                                onClick = { selectedOption = opt }
+                            )
                         }
                     }
 
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    // Primary Download Action Button
+                    // Download Action Button
+                    var isDownloading by remember { mutableStateOf(false) }
+
                     Button(
                         onClick = {
-                            val title = parsedMedia?.title ?: "Downloaded Media"
-                            val thumb = parsedMedia?.thumbnail ?: ""
-                            onStartDownload(
-                                selectedOption,
-                                title,
-                                thumb
-                            )
+                            if (!isDownloading) {
+                                isDownloading = true
+                                val title = parsedMedia?.title ?: "Downloaded Media"
+                                val thumb = parsedMedia?.thumbnail ?: ""
+                                onStartDownload(
+                                    selectedOption,
+                                    title,
+                                    thumb
+                                )
+                            }
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(50.dp)
-                            .testTag("btn_start_quick_download"),
-                        shape = RoundedCornerShape(14.dp),
+                            .height(54.dp)
+                            .testTag("btn_start_download_popup"),
+                        shape = RoundedCornerShape(28.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary
-                        )
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        ),
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
                     ) {
+                        if (isDownloading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(22.dp),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                strokeWidth = 2.8.dp,
+                                trackColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "Starting...",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 16.sp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = "Download",
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Download",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 16.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PopupQualityRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    size: String,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        shape = RoundedCornerShape(14.dp),
+        color = if (isSelected) {
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+        },
+        border = BorderStroke(
+            width = if (isSelected) 1.8.dp else 1.dp,
+            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(10.dp))
+
+                Text(
+                    text = title,
+                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                    fontSize = 13.5.sp,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                )
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = size,
+                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Spacer(modifier = Modifier.width(10.dp))
+
+                Box(
+                    modifier = Modifier
+                        .size(18.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isSelected) {
                         Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp)
+                            imageVector = Icons.Default.Check,
+                            contentDescription = "Selected",
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(12.dp)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Download ${selectedOption.label}",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
+                    } else {
+                        Surface(
+                            shape = CircleShape,
+                            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.outlineVariant),
+                            color = Color.Transparent,
+                            modifier = Modifier.size(16.dp)
+                        ) {}
                     }
                 }
             }

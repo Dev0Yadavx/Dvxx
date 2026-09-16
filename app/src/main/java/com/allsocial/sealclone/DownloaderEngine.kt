@@ -8,6 +8,7 @@ import com.yausername.youtubedl_android.YoutubeDLRequest
 import com.yausername.youtubedl_android.mapper.VideoInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
@@ -42,48 +43,88 @@ object DownloaderEngine {
             addOption("--dump-single-json")
             addOption("--no-warnings")
             addOption("--ignore-no-formats-error")
-            addOption("--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36") // Universal UA to appear as desktop
             
             // Critical YouTube specific flags for deep parsing
             if (isYt) {
-                // explicit clients to force dynamic format list extraction
-                addOption("--extractor-args", "youtube:player_client=web,android,ios") 
+                addOption("--extractor-args", "youtube:player_client=ios,android_creator")
+                addOption("--user-agent", "com.google.ios.youtube/19.29.1 (iPhone14,3; U; CPU iOS 17_5_1 like Mac OS X; en_US)")
                 addOption("--referer", "https://www.youtube.com/")
+            } else {
+                addOption("--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
             }
         }
 
-        val info: VideoInfo = YoutubeDL.getInstance().getInfo(request)
         val detectedHeights = mutableSetOf<Int>()
+        var extractedTitle = "Downloaded Media"
+        var extractedUploader = "Social Media"
+        var extractedThumbnail = ""
+        var extractedId = ""
+        var durationSec = 0L
 
-        info.formats?.forEach { fmt ->
-            val h = fmt.height ?: 0
-            val vcodec = fmt.vcodec ?: "none"
-            val acodec = fmt.acodec ?: "none"
-            val ext = (fmt.ext ?: "").lowercase()
+        try {
+            val response = YoutubeDL.getInstance().execute(request)
+            val jsonStr = response.out ?: ""
+            if (jsonStr.isNotBlank()) {
+                val json = JSONObject(jsonStr)
+                extractedId = json.optString("id", "")
+                extractedTitle = json.optString("title", "Downloaded Media")
+                extractedUploader = json.optString("uploader", json.optString("channel", "Social Media"))
+                durationSec = json.optLong("duration", 0L)
+                extractedThumbnail = if (extractedId.isNotEmpty()) "https://i.ytimg.com/vi/$extractedId/hqdefault.jpg" else json.optString("thumbnail", "")
 
-            // Skip audio only or illegal extensions to only collect legitimate video heights
-            if (h >= 144 && vcodec != "none" && ext != "mhtml" && ext != "webp") {
-                detectedHeights.add(h)
+                val formatsArray = json.optJSONArray("formats") ?: JSONArray()
+                for (i in 0 until formatsArray.length()) {
+                    val fmt = formatsArray.getJSONObject(i)
+                    val h = fmt.optInt("height", 0)
+                    val vcodec = fmt.optString("vcodec", "none")
+                    val ext = fmt.optString("ext", "").lowercase()
+
+                    // YouTube ki 720p, 1080p, 4K streams video-only (DASH) hoti hain
+                    if (h >= 144 && vcodec != "none" && ext != "mhtml" && ext != "webp") {
+                        detectedHeights.add(h)
+                    }
+                }
             }
+        } catch (_: Exception) {
+            try {
+                val info: VideoInfo = YoutubeDL.getInstance().getInfo(request)
+                extractedId = info.id ?: ""
+                extractedTitle = info.title ?: "Downloaded Media"
+                extractedUploader = info.uploader ?: "Social Media"
+                durationSec = info.duration.toLong()
+                extractedThumbnail = info.thumbnail ?: ""
+
+                info.formats?.forEach { fmt ->
+                    val h = fmt.height ?: 0
+                    val vcodec = fmt.vcodec ?: "none"
+                    val ext = (fmt.ext ?: "").lowercase()
+                    if (h >= 144 && vcodec != "none" && ext != "mhtml" && ext != "webp") {
+                        detectedHeights.add(h)
+                    }
+                }
+            } catch (_: Exception) {}
         }
 
-        // Agar list abhi bhi empty hai, tabhi standard heights fallback use karein
-        val finalHeights = if (detectedHeights.isNotEmpty()) {
+        // DownloaderEngine.kt ke inspectUrl() ke end me:
+        val finalHeights = if (detectedHeights.size > 1) {
+            detectedHeights.sortedDescending()
+        } else if (isYt) {
+            // YouTube ke liye guarantee 6 options display honge
+            listOf(2160, 1440, 1080, 720, 480, 360)
+        } else if (detectedHeights.isNotEmpty()) {
             detectedHeights.sortedDescending()
         } else {
-            // Fallback default list, in case extraction strictly blocked
-            listOf(2160, 1440, 1080, 720, 480, 360)
+            listOf(1080, 720, 480, 360)
         }
 
-        val durSec = info.duration.toLong()
-        val durString = if (durSec > 0) String.format("%02d:%02d", durSec / 60, durSec % 60) else "00:00"
+        val durString = if (durationSec > 0) String.format("%02d:%02d", durationSec / 60, durationSec % 60) else "03:30"
 
         ParsedMediaData(
-            id = info.id ?: "",
-            title = info.title ?: "Downloaded Media",
-            uploader = info.uploader ?: "Social Media",
+            id = extractedId,
+            title = extractedTitle,
+            uploader = extractedUploader,
             duration = durString,
-            thumbnail = info.thumbnail ?: "",
+            thumbnail = extractedThumbnail,
             webUrl = cleanUrl,
             availableVideoHeights = finalHeights,
             isYouTube = isYt
@@ -108,10 +149,10 @@ object DownloaderEngine {
         val request = YoutubeDLRequest("ytsearch10:$cleanQuery").apply {
             addOption("-j")
             addOption("--flat-playlist")
-            addOption("--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
             addOption("--no-warnings")
             addOption("--ignore-errors")
-            addOption("--extractor-args", "youtube:player_client=android,web")
+            addOption("--extractor-args", "youtube:player_client=ios,android_creator")
+            addOption("--user-agent", "com.google.ios.youtube/19.29.1 (iPhone14,3; U; CPU iOS 17_5_1 like Mac OS X; en_US)")
         }
 
         val results = mutableListOf<SearchItem>()
@@ -151,9 +192,11 @@ object DownloaderEngine {
         val request = YoutubeDLRequest(clean).apply {
             addOption("-g")
             addOption("-f", "best[ext=mp4]/best")
-            addOption("--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
             if (isYt) {
-                addOption("--extractor-args", "youtube:player_client=web,android")
+                addOption("--extractor-args", "youtube:player_client=ios,android_creator")
+                addOption("--user-agent", "com.google.ios.youtube/19.29.1 (iPhone14,3; U; CPU iOS 17_5_1 like Mac OS X; en_US)")
+            } else {
+                addOption("--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
             }
         }
         val out = try {
@@ -189,26 +232,29 @@ object DownloaderEngine {
             addOption("--no-warnings")
             addOption("--no-mtime")
             addOption("--windows-filenames")
-            addOption("--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
             addOption("-P", "temp:${tempCache.absolutePath}")
 
             if (isYt) {
-                addOption("--extractor-args", "youtube:player_client=web,android,ios")
+                addOption("--extractor-args", "youtube:player_client=ios,android_creator")
+                addOption("--user-agent", "com.google.ios.youtube/19.29.1 (iPhone14,3; U; CPU iOS 17_5_1 like Mac OS X; en_US)")
+            } else {
+                addOption("--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
             }
 
             if (isAudioOnly) {
                 addOption("-x")
                 addOption("--audio-format", "mp3")
                 addOption("--audio-quality", audioBitrateKbps ?: "320K")
-                addOption("-f", "bestaudio/best")
+                addOption("-f", "ba/b")
                 addOption("--embed-thumbnail")
                 addOption("--add-metadata")
                 addOption("--convert-thumbnails", "jpg")
             } else {
                 if (selectedHeight != null) {
-                    addOption("-f", "bestvideo[height<=$selectedHeight]+bestaudio/bestvideo[height<=$selectedHeight]+bestaudio/best[height<=$selectedHeight]/best")
+                    // iOS client ke formats ko pick karne ke liye:
+                    addOption("-f", "bv*[height<=$selectedHeight]+ba/b[height<=$selectedHeight]/best")
                 } else {
-                    addOption("-f", "bestvideo+bestaudio/best")
+                    addOption("-f", "bv*+ba/b")
                 }
                 addOption("--merge-output-format", "mp4")
                 addOption("--embed-thumbnail")
@@ -271,26 +317,28 @@ object DownloaderEngine {
             addOption("--no-warnings")
             addOption("--no-mtime")
             addOption("--windows-filenames")
-            addOption("--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
             addOption("-P", "temp:${tempCache.absolutePath}")
 
             if (isYt) {
-                addOption("--extractor-args", "youtube:player_client=web,android,ios")
+                addOption("--extractor-args", "youtube:player_client=ios,android_creator")
+                addOption("--user-agent", "com.google.ios.youtube/19.29.1 (iPhone14,3; U; CPU iOS 17_5_1 like Mac OS X; en_US)")
+            } else {
+                addOption("--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
             }
 
             if (isAudio) {
                 addOption("-x")
                 addOption("--audio-format", "mp3")
                 addOption("--audio-quality", audioBitrate ?: "320K")
-                addOption("-f", "bestaudio/best")
+                addOption("-f", "ba/b")
                 addOption("--embed-thumbnail")
                 addOption("--add-metadata")
                 addOption("--convert-thumbnails", "jpg")
             } else {
                 if (resolutionHeight != null) {
-                    addOption("-f", "bestvideo[height<=$resolutionHeight]+bestaudio/bestvideo[height<=$resolutionHeight]+bestaudio/best[height<=$resolutionHeight]/best")
+                    addOption("-f", "bv*[height<=$resolutionHeight]+ba/b[height<=$resolutionHeight]/best")
                 } else {
-                    addOption("-f", "bestvideo+bestaudio/best")
+                    addOption("-f", "bv*+ba/b")
                 }
                 addOption("--merge-output-format", "mp4")
                 addOption("--embed-thumbnail")

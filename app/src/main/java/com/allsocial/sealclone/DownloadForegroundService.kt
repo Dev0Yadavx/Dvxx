@@ -276,42 +276,15 @@ class DownloadForegroundService : Service() {
 
         val progressInt = progress.toInt().coerceIn(0, 100)
         val isIndeterminate = progress <= 0f || progress > 100f
-        val percentText = if (isIndeterminate) "..." else "$progressInt%"
+        val percentText = if (isIndeterminate) "Downloading..." else "$progressInt% • Downloading"
 
         val coverBitmap = artCoverCache[taskId]
-
-        // Custom notification RemoteViews with art cover, title, progress bar, and percentage
-        val remoteViewsSmall = android.widget.RemoteViews(packageName, R.layout.notification_download_progress_small).apply {
-            setTextViewText(R.id.notification_title_small, title)
-            setTextViewText(R.id.notification_percent_small, percentText)
-            setProgressBar(R.id.notification_progress_bar_small, 100, progressInt, isIndeterminate)
-            if (coverBitmap != null) {
-                setImageViewBitmap(R.id.notification_art_cover_small, coverBitmap)
-            } else {
-                setImageViewResource(R.id.notification_art_cover_small, R.drawable.ic_notification_download)
-            }
-        }
-
-        val remoteViewsBig = android.widget.RemoteViews(packageName, R.layout.notification_download_progress).apply {
-            setTextViewText(R.id.notification_title, title)
-            setTextViewText(R.id.notification_percent, percentText)
-            setProgressBar(R.id.notification_progress_bar, 100, progressInt, isIndeterminate)
-            setOnClickPendingIntent(R.id.notification_cancel, cancelPendingIntent)
-            if (coverBitmap != null) {
-                setImageViewBitmap(R.id.notification_art_cover, coverBitmap)
-            } else {
-                setImageViewResource(R.id.notification_art_cover, R.drawable.ic_notification_download)
-            }
-        }
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_download)
             .setContentTitle(title)
             .setContentText(percentText)
             .setContentIntent(contentPendingIntent)
-            .setCustomContentView(remoteViewsSmall)
-            .setCustomBigContentView(remoteViewsBig)
-            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
             .setProgress(100, progressInt, isIndeterminate)
             .setOngoing(true)
             .setOnlyAlertOnce(true)

@@ -10,8 +10,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 class SealApp : Application() {
+    companion object {
+        lateinit var instance: SealApp
+            private set
+    }
+
     override fun onCreate() {
         super.onCreate()
+        instance = this
         EngineInitState.setApplicationContext(this)
 
         // Initialize binaries in background to keep UI startup instant and avoid audit log flood
