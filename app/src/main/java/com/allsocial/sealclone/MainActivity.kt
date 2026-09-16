@@ -496,15 +496,34 @@ fun HomeSearchScreen(
     var isLoading by remember { mutableStateOf(false) }
     var playingUrl by remember { mutableStateOf<String?>(null) }
 
+    var selectedMediaData by remember { mutableStateOf<ParsedMediaData?>(null) }
+    var isInspecting by remember { mutableStateOf(false) }
+
+    // Jab user Search bar me direct Link paste kare ya List item par tap kare:
+    fun handleTargetSelection(targetUrl: String) {
+        scope.launch {
+            isInspecting = true
+            try {
+                selectedMediaData = DownloaderEngine.inspectUrl(targetUrl)
+            } catch (e: Exception) {
+                Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+            } finally {
+                isInspecting = false
+            }
+        }
+    }
+
+    fun triggerDownloadTask(webUrl: String, height: Int?, isAudio: Boolean, bitrate: String?, title: String, thumbnail: String) {
+        val qualityLabel = if (isAudio) (bitrate ?: "320K") else (height?.toString() ?: "1080")
+        val format = if (isAudio) "ba/b" else (height?.let { "bestvideo[height<=$it]+bestaudio/best[height<=$it]/best" } ?: "bestvideo+bestaudio/best")
+        onStartDownload(webUrl, format, isAudio, qualityLabel, title, thumbnail)
+    }
+
     LaunchedEffect(incomingUrl) {
         if (incomingUrl.isNotBlank()) {
             searchInput = incomingUrl
             onUrlHandled()
-            isLoading = true
-            scope.launch {
-                searchResults = DownloaderEngine.searchOrFetch(incomingUrl)
-                isLoading = false
-            }
+            handleTargetSelection(incomingUrl)
         }
     }
 
@@ -633,14 +652,20 @@ fun HomeSearchScreen(
                 value = searchInput,
                 onValueChange = { searchInput = it },
                 onSearch = {
-                    if (searchInput.isNotBlank()) {
+                    val clean = searchInput.trim()
+                    if (clean.isNotBlank()) {
                         keyboardController?.hide() // Keyboard band karein
-                        isLoading = true
-                        scope.launch {
-                            searchResults = DownloaderEngine.searchOrFetch(searchInput.trim())
-                            isLoading = false
-                            if (searchResults.isEmpty()) {
-                                Toast.makeText(context, "No results found", Toast.LENGTH_SHORT).show()
+                        val isUrl = clean.startsWith("http://") || clean.startsWith("https://")
+                        if (isUrl) {
+                            handleTargetSelection(clean)
+                        } else {
+                            isLoading = true
+                            scope.launch {
+                                searchResults = DownloaderEngine.searchYouTubeTop10(clean)
+                                isLoading = false
+                                if (searchResults.isEmpty()) {
+                                    Toast.makeText(context, "No results found", Toast.LENGTH_SHORT).show()
+                                }
                             }
                         }
                     }
@@ -652,12 +677,15 @@ fun HomeSearchScreen(
                         val fullUrl = urlRegex.find(raw)?.value ?: raw
                         searchInput = fullUrl
 
-                        // Auto trigger search on paste
-                        if (fullUrl.isNotBlank()) {
+                        // Auto trigger on paste
+                        if (fullUrl.startsWith("http://") || fullUrl.startsWith("https://")) {
+                            keyboardController?.hide()
+                            handleTargetSelection(fullUrl)
+                        } else if (fullUrl.isNotBlank()) {
                             keyboardController?.hide()
                             isLoading = true
                             scope.launch {
-                                searchResults = DownloaderEngine.searchOrFetch(fullUrl)
+                                searchResults = DownloaderEngine.searchYouTubeTop10(fullUrl)
                                 isLoading = false
                             }
                         }
@@ -678,20 +706,12 @@ fun HomeSearchScreen(
                         searchInput = detectedUrl
                         keyboardController?.hide()
                         Toast.makeText(context, "Pasted ${platform.name} link!", Toast.LENGTH_SHORT).show()
-                        isLoading = true
-                        scope.launch {
-                            searchResults = DownloaderEngine.searchOrFetch(detectedUrl)
-                            isLoading = false
-                        }
+                        handleTargetSelection(detectedUrl)
                     } else if (detectedUrl.isNotBlank()) {
                         searchInput = detectedUrl
                         keyboardController?.hide()
                         Toast.makeText(context, "Pasted link from clipboard!", Toast.LENGTH_SHORT).show()
-                        isLoading = true
-                        scope.launch {
-                            searchResults = DownloaderEngine.searchOrFetch(detectedUrl)
-                            isLoading = false
-                        }
+                        handleTargetSelection(detectedUrl)
                     } else {
                         Toast.makeText(context, "${platform.name}: ${platform.sampleTip}", Toast.LENGTH_LONG).show()
                     }
@@ -881,7 +901,7 @@ fun HomeSearchScreen(
 
                             // Down me Download Button -> Tap to open Quality option (Square shape)
                             Button(
-                                onClick = { vm.openBottomSheet(item) },
+                                onClick = { handleTargetSelection(item.url) },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(44.dp)
@@ -911,6 +931,62 @@ fun HomeSearchScreen(
                 }
             }
         }
+    }
+
+    // Inspecting Media Progress Dialog
+    if (isInspecting) {
+        AlertDialog(
+            onDismissRequest = {},
+            confirmButton = {},
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(20.dp),
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.padding(12.dp)
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(36.dp),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Column {
+                        Text(
+                            text = "Inspecting Media...",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Analyzing available formats & bitrates",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        )
+    }
+
+    // Dialog Trigger for Universal Download Sheet
+    if (selectedMediaData != null) {
+        UniversalDownloadSheet(
+            media = selectedMediaData!!,
+            onDismiss = { selectedMediaData = null },
+            onWatchClick = { url ->
+                scope.launch {
+                    val stream = DownloaderEngine.getStreamUrl(url)
+                    playingUrl = stream
+                    selectedMediaData = null
+                }
+            },
+            onStartDownload = { height, isAudio, bitrate ->
+                val data = selectedMediaData!!
+                selectedMediaData = null
+                // Trigger background download via ViewModel
+                triggerDownloadTask(data.webUrl, height, isAudio, bitrate, data.title, data.thumbnail)
+            }
+        )
     }
 
     // Material 3 Bottom Sheet for Stream Preview & Multi-Format Downloading

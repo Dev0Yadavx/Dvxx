@@ -5,201 +5,296 @@ import android.media.MediaScannerConnection
 import android.os.Environment
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
+import com.yausername.youtubedl_android.mapper.VideoInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.File
 
-fun scanMediaFile(context: Context, file: File, mimeType: String) {
-    MediaScannerConnection.scanFile(
-        context.applicationContext,
-        arrayOf(file.absolutePath),
-        arrayOf(mimeType)
-    ) { path, uri ->
-        // Media indexed successfully by Android OS
-    }
-}
+data class ParsedMediaData(
+    val id: String,
+    val title: String,
+    val uploader: String,
+    val duration: String,
+    val thumbnail: String,
+    val webUrl: String,
+    val availableVideoHeights: List<Int>,
+    val isYouTube: Boolean
+)
 
 object DownloaderEngine {
 
-    fun fixUrl(input: String): String {
-        val trimmed = input.trim()
-        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-            return trimmed.substringBefore("?si=").substringBefore("&si=")
-        }
-        val idRegex = Regex("""([a-zA-Z0-9_-]{11})""")
-        val match = idRegex.find(trimmed)
-        return if (match != null) "https://www.youtube.com/watch?v=${match.value}" else trimmed
+    // Clean tracking tags across all platforms (igshid, si, fbclid, etc.)
+    fun sanitizeUrl(raw: String): String {
+        val trimmed = raw.trim()
+        val urlMatch = Regex("""(https?://[^\s]+)""").find(trimmed)
+        val extracted = urlMatch?.value ?: trimmed
+
+        return extracted
+            .replace(Regex("""[?&](si|igshid|fbclid|utm_[^&=]+)=[^&#]*"""), "")
+            .trimEnd('?', '&')
     }
 
-    // Direct stream for In-App Player
-    suspend fun extractDirectStreamUrl(targetUrl: String): String = withContext(Dispatchers.IO) {
-        val validUrl = fixUrl(targetUrl)
+    // Inspect stream details and available resolutions
+    suspend fun inspectUrl(rawUrl: String): ParsedMediaData = withContext(Dispatchers.IO) {
+        val cleanUrl = sanitizeUrl(rawUrl)
+        val isYt = cleanUrl.contains("youtube.com") || cleanUrl.contains("youtu.be")
         EngineInitState.ensureInitialized()
-        val request = YoutubeDLRequest(validUrl).apply {
-            addOption("-g")
-            addOption("-f", "best[ext=mp4]/best")
-            addOption("--no-cache-dir")
+
+        val request = YoutubeDLRequest(cleanUrl).apply {
+            addOption("--dump-single-json")
             addOption("--no-warnings")
-            addOption("--socket-timeout", "15")
-            addOption("--extractor-args", "youtube:player_client=android,web")
-        }
-        val response = try {
-            YoutubeDL.getInstance().execute(request)
-        } catch (e: Exception) {
-            null
-        }
-        response?.out?.lines()?.firstOrNull { it.startsWith("http") } ?: validUrl
-    }
-
-    // 10 Search Results (Guaranteed 10 entries via raw JSON line streaming)
-    suspend fun searchOrFetch(query: String): List<SearchItem> = withContext(Dispatchers.IO) {
-        val clean = fixUrl(query)
-        val isDirectLink = clean.startsWith("http://") || clean.startsWith("https://")
-        val target = if (isDirectLink) clean else "ytsearch20:$clean"
-
-        EngineInitState.ensureInitialized()
-        val request = YoutubeDLRequest(target).apply {
-            addOption("-j") // Print each item as raw JSON line
-            addOption("--flat-playlist")
-            addOption("--no-warnings")
-            addOption("--ignore-errors")
-            addOption("--no-cache-dir")
-            addOption("--socket-timeout", "15")
-            addOption("--extractor-args", "youtube:player_client=ios,android")
-        }
-
-        val list = mutableListOf<SearchItem>()
-
-        try {
-            // Raw execute se har video ki ek alag JSON line aati hai
-            val response = YoutubeDL.getInstance().execute(request)
-            val output = response.out ?: ""
-
-            output.lineSequence().forEach { line ->
-                val trimmedLine = line.trim()
-                if (trimmedLine.startsWith("{") && trimmedLine.endsWith("}")) {
-                    try {
-                        val json = org.json.JSONObject(trimmedLine)
-                        val id = json.optString("id", "")
-                        val title = json.optString("title", "YouTube Video")
-                        val uploader = json.optString("uploader", json.optString("channel", "Artist"))
-                        
-                        // Duration formatting
-                        val durationSec = json.optLong("duration", 0L)
-                        val durationStr = if (durationSec > 0) {
-                            String.format("%02d:%02d", durationSec / 60, durationSec % 60)
-                        } else {
-                            json.optString("duration_string", "03:30")
-                        }
-
-                        // Thumbnail fallback
-                        val thumb = if (id.isNotEmpty()) {
-                            "https://i.ytimg.com/vi/$id/hqdefault.jpg"
-                        } else {
-                            json.optString("thumbnail", "")
-                        }
-
-                        val url = if (id.isNotEmpty()) {
-                            "https://www.youtube.com/watch?v=$id"
-                        } else {
-                            json.optString("url", clean)
-                        }
-
-                        list.add(
-                            SearchItem(
-                                id = id,
-                                title = title,
-                                uploader = uploader,
-                                duration = durationStr,
-                                thumbnail = thumb,
-                                url = url
-                            )
-                        )
-                    } catch (e: Exception) {
-                        // Skip corrupted line
-                    }
-                }
-                if (list.size >= 20) return@forEach
+            addOption("--ignore-no-formats-error")
+            if (isYt) {
+                addOption("--extractor-args", "youtube:player_client=android,web")
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
 
-        if (list.isEmpty() && isDirectLink) {
-            val ytRegex = Regex("""(?:v=|/v/|youtu\.be/|/embed/|/shorts/)([a-zA-Z0-9_-]{11})""")
-            val match = ytRegex.find(clean)
-            val ytId = match?.groupValues?.get(1)
-            val fallbackThumb = if (ytId != null) "https://i.ytimg.com/vi/$ytId/hqdefault.jpg" else ""
-            list.add(
+        val info: VideoInfo = YoutubeDL.getInstance().getInfo(request)
+        val detectedHeights = mutableSetOf<Int>()
+
+        info.formats?.forEach { fmt ->
+            val h = fmt.height ?: 0
+            val vcodec = fmt.vcodec ?: "none"
+            val ext = (fmt.ext ?: "").lowercase()
+
+            if (h >= 144 && vcodec != "none" && ext != "mhtml" && ext != "webp") {
+                detectedHeights.add(h)
+            }
+        }
+
+        // Standard fallback if formats list is empty (common in Reels/Direct MP4s)
+        val finalHeights = if (detectedHeights.isNotEmpty()) {
+            detectedHeights.sortedDescending()
+        } else {
+            listOf(1080, 720, 480, 360)
+        }
+
+        val durSec = info.duration.toLong()
+        val durString = if (durSec > 0) String.format("%02d:%02d", durSec / 60, durSec % 60) else "00:00"
+
+        ParsedMediaData(
+            id = info.id ?: "",
+            title = info.title ?: "Downloaded Media",
+            uploader = info.uploader ?: "Social Media",
+            duration = durString,
+            thumbnail = info.thumbnail ?: "",
+            webUrl = cleanUrl,
+            availableVideoHeights = finalHeights,
+            isYouTube = isYt
+        )
+    }
+
+    // Search query parser (for YouTube searches)
+    suspend fun searchYouTubeTop10(query: String): List<SearchItem> = withContext(Dispatchers.IO) {
+        val cleanQuery = query.trim()
+        val isDirectLink = cleanQuery.startsWith("http://") || cleanQuery.startsWith("https://")
+
+        if (isDirectLink) {
+            val item = inspectUrl(cleanQuery)
+            return@withContext listOf(
                 SearchItem(
-                    id = ytId ?: System.currentTimeMillis().toString(),
-                    title = if (ytId != null) "YouTube Video ($ytId)" else clean,
-                    uploader = "Direct Media",
-                    duration = "HD",
-                    thumbnail = fallbackThumb,
-                    url = clean
+                    id = item.id,
+                    title = item.title,
+                    uploader = item.uploader,
+                    duration = item.duration,
+                    thumbnail = item.thumbnail,
+                    url = item.webUrl
                 )
             )
         }
 
-        list
+        EngineInitState.ensureInitialized()
+        val request = YoutubeDLRequest("ytsearch10:$cleanQuery").apply {
+            addOption("-j")
+            addOption("--flat-playlist")
+            addOption("--no-warnings")
+            addOption("--ignore-errors")
+            addOption("--extractor-args", "youtube:player_client=android,web")
+        }
+
+        val results = mutableListOf<SearchItem>()
+        try {
+            val output = YoutubeDL.getInstance().execute(request).out ?: ""
+            output.lineSequence().forEach { line ->
+                val trimmed = line.trim()
+                if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+                    try {
+                        val json = JSONObject(trimmed)
+                        val id = json.optString("id", "")
+                        val title = json.optString("title", "Video")
+                        val uploader = json.optString("uploader", json.optString("channel", "Artist"))
+                        val durSec = json.optLong("duration", 0L)
+                        val dur = if (durSec > 0) String.format("%02d:%02d", durSec / 60, durSec % 60) else "03:30"
+                        val thumb = if (id.isNotEmpty()) "https://i.ytimg.com/vi/$id/hqdefault.jpg" else json.optString("thumbnail", "")
+                        val targetUrl = if (id.isNotEmpty()) "https://www.youtube.com/watch?v=$id" else json.optString("url", "")
+
+                        if (targetUrl.isNotBlank()) {
+                            results.add(SearchItem(id, title, uploader, dur, thumb, targetUrl))
+                        }
+                    } catch (_: Exception) {}
+                }
+                if (results.size >= 10) return@forEach
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        results
     }
 
-    // Direct alias for backward-compatibility
-    suspend fun search(query: String): List<SearchItem> = searchOrFetch(query)
+    // Direct Stream Extractor for In-App Player
+    suspend fun getStreamUrl(webUrl: String): String = withContext(Dispatchers.IO) {
+        val clean = sanitizeUrl(webUrl)
+        val isYt = clean.contains("youtube.com") || clean.contains("youtu.be")
+        EngineInitState.ensureInitialized()
+        val request = YoutubeDLRequest(clean).apply {
+            addOption("-g")
+            addOption("-f", "best[ext=mp4]/best")
+            if (isYt) {
+                addOption("--extractor-args", "youtube:player_client=android,web")
+            }
+        }
+        val out = try {
+            YoutubeDL.getInstance().execute(request).out ?: ""
+        } catch (e: Exception) {
+            ""
+        }
+        out.lines().firstOrNull { it.startsWith("http") } ?: clean
+    }
 
-    // Download Engine with Cover Art, Tags & Real Multi-Quality
+    // Universal Multi-Quality Download Engine
+    suspend fun executeDownload(
+        context: Context,
+        rawUrl: String,
+        selectedHeight: Int?,
+        isAudioOnly: Boolean,
+        audioBitrateKbps: String?, // "320K", "256K", "192K", "128K", "64K"
+        onProgress: (Float, String) -> Unit
+    ): File = withContext(Dispatchers.IO) {
+        val cleanUrl = sanitizeUrl(rawUrl)
+        val isYt = cleanUrl.contains("youtube.com") || cleanUrl.contains("youtu.be")
+        EngineInitState.ensureInitialized(context)
+
+        val targetDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        if (!targetDir.exists()) targetDir.mkdirs()
+
+        val tempCache = File(context.cacheDir, "seal_tmp_${System.currentTimeMillis()}")
+        if (!tempCache.exists()) tempCache.mkdirs()
+
+        val fileNamePattern = "${targetDir.absolutePath}/%(title).100B.%(ext)s"
+
+        val request = YoutubeDLRequest(cleanUrl).apply {
+            addOption("--no-warnings")
+            addOption("--no-mtime")
+            addOption("--windows-filenames")
+            addOption("-P", "temp:${tempCache.absolutePath}")
+
+            if (isYt) {
+                addOption("--extractor-args", "youtube:player_client=android,web")
+            }
+
+            if (isAudioOnly) {
+                addOption("-x")
+                addOption("--audio-format", "mp3")
+                addOption("--audio-quality", audioBitrateKbps ?: "320K")
+                addOption("-f", "bestaudio/best")
+                addOption("--embed-thumbnail")
+                addOption("--add-metadata")
+                addOption("--convert-thumbnails", "jpg")
+            } else {
+                if (selectedHeight != null) {
+                    addOption("-f", "bestvideo[height<=$selectedHeight]+bestaudio/best[height<=$selectedHeight]/best")
+                } else {
+                    addOption("-f", "bestvideo+bestaudio/best")
+                }
+                addOption("--merge-output-format", "mp4")
+                addOption("--embed-thumbnail")
+                addOption("--add-metadata")
+            }
+
+            addOption("-o", fileNamePattern)
+        }
+
+        YoutubeDL.getInstance().execute(request) { progress, _, line ->
+            onProgress(progress, line ?: "")
+        }
+
+        tempCache.deleteRecursively()
+
+        val savedFile = targetDir.listFiles()?.maxByOrNull { it.lastModified() }
+            ?: File(targetDir, if (isAudioOnly) "audio.mp3" else "video.mp4")
+
+        // Broadcast to OS media scanner
+        MediaScannerConnection.scanFile(
+            context.applicationContext,
+            arrayOf(savedFile.absolutePath),
+            arrayOf(if (isAudioOnly) "audio/mpeg" else "video/mp4"),
+            null
+        )
+
+        savedFile
+    }
+
+    // Direct stream for In-App Player
+    suspend fun extractDirectStreamUrl(targetUrl: String): String = getStreamUrl(targetUrl)
+
+    fun fixUrl(input: String): String = sanitizeUrl(input)
+
+    suspend fun searchOrFetch(query: String): List<SearchItem> = searchYouTubeTop10(query)
+
+    suspend fun search(query: String): List<SearchItem> = searchYouTubeTop10(query)
+
     suspend fun startDownload(
         context: Context,
         targetUrl: String,
         resolutionHeight: Int?,
         isAudio: Boolean,
-        audioBitrate: String?, // "320K", "192K", "64K"
+        audioBitrate: String?,
         processId: String? = null,
         onProgress: (Float, String) -> Unit
     ): File = withContext(Dispatchers.IO) {
-        val validUrl = fixUrl(targetUrl)
+        val cleanUrl = sanitizeUrl(targetUrl)
+        val isYt = cleanUrl.contains("youtube.com") || cleanUrl.contains("youtu.be")
         EngineInitState.ensureInitialized(context)
 
-        // 1. Android 11, 12, 13, 14 safe directory (Always use Download)
-        val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-        if (!downloadDir.exists()) downloadDir.mkdirs()
+        val targetDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        if (!targetDir.exists()) targetDir.mkdirs()
 
-        // 2. Temp cache dir for thumbnails and intermediate files (No Permission Error)
-        val cacheDir = File(context.cacheDir, "yt_tmp")
-        if (!cacheDir.exists()) cacheDir.mkdirs()
+        val tempCache = File(context.cacheDir, "seal_tmp_${System.currentTimeMillis()}")
+        if (!tempCache.exists()) tempCache.mkdirs()
 
-        // Windows/Android safe filename pattern (removes illegal characters)
-        val fileTemplate = "${downloadDir.absolutePath}/%(title).100B.%(ext)s"
+        val fileNamePattern = "${targetDir.absolutePath}/%(title).100B.%(ext)s"
 
-        val request = YoutubeDLRequest(validUrl).apply {
+        val request = YoutubeDLRequest(cleanUrl).apply {
             addOption("--no-warnings")
             addOption("--no-mtime")
-            addOption("--windows-filenames") // Special Hindi/Special characters ko crash hone se bachata hai
-            addOption("--extractor-args", "youtube:player_client=android,web")
+            addOption("--windows-filenames")
+            addOption("-P", "temp:${tempCache.absolutePath}")
 
-            // Temp files ko app cache me daalein taaki OS permission block na kare
-            addOption("-P", "temp:${cacheDir.absolutePath}")
+            if (isYt) {
+                addOption("--extractor-args", "youtube:player_client=android,web")
+            }
 
             if (isAudio) {
                 addOption("-x")
                 addOption("--audio-format", "mp3")
                 addOption("--audio-quality", audioBitrate ?: "320K")
                 addOption("-f", "bestaudio/best")
-
-                // Embed thumbnail safely using cache
                 addOption("--embed-thumbnail")
                 addOption("--add-metadata")
                 addOption("--convert-thumbnails", "jpg")
             } else {
-                val res = resolutionHeight ?: 1080
-                addOption("-f", "bestvideo[height<=$res]+bestaudio/best[height<=$res]/best")
+                if (resolutionHeight != null) {
+                    addOption("-f", "bestvideo[height<=$resolutionHeight]+bestaudio/best[height<=$resolutionHeight]/best")
+                } else {
+                    addOption("-f", "bestvideo+bestaudio/best")
+                }
                 addOption("--merge-output-format", "mp4")
                 addOption("--embed-thumbnail")
                 addOption("--add-metadata")
             }
 
-            addOption("-o", fileTemplate)
+            addOption("-o", fileNamePattern)
         }
 
         if (processId != null) {
@@ -212,85 +307,23 @@ object DownloaderEngine {
             }
         }
 
-        // Cache cleanup
-        cacheDir.deleteRecursively()
+        tempCache.deleteRecursively()
 
-        // Download folder me aayi nayi file khojein
-        val finalFile = downloadDir.listFiles()?.maxByOrNull { it.lastModified() }
-            ?: File(downloadDir, if (isAudio) "audio.mp3" else "video.mp4")
+        val savedFile = targetDir.listFiles()?.maxByOrNull { it.lastModified() }
+            ?: File(downloadDirOrDefault(context), if (isAudio) "audio.mp3" else "video.mp4")
 
-        // Android Gallery aur Media Scanner ko notify karein
-        scanMediaFile(
-            context = context,
-            file = finalFile,
-            mimeType = if (isAudio) "audio/mpeg" else "video/mp4"
+        MediaScannerConnection.scanFile(
+            context.applicationContext,
+            arrayOf(savedFile.absolutePath),
+            arrayOf(if (isAudio) "audio/mpeg" else "video/mp4"),
+            null
         )
 
-        finalFile
+        savedFile
     }
 
-    // Overload without processId
-    suspend fun startDownload(
-        context: Context,
-        targetUrl: String,
-        resolutionHeight: Int?,
-        isAudio: Boolean,
-        audioBitrate: String?,
-        onProgress: (Float, String) -> Unit
-    ): File = startDownload(
-        context = context,
-        targetUrl = targetUrl,
-        resolutionHeight = resolutionHeight,
-        isAudio = isAudio,
-        audioBitrate = audioBitrate,
-        processId = null,
-        onProgress = onProgress
-    )
-
-    // Overload for calls without context (backward compatibility)
-    suspend fun startDownload(
-        targetUrl: String,
-        resolutionHeight: Int?,
-        isAudio: Boolean,
-        audioBitrate: String?,
-        onProgress: (Float, String) -> Unit
-    ): File = withContext(Dispatchers.IO) {
-        val validUrl = fixUrl(targetUrl)
-        EngineInitState.ensureInitialized()
-        val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-        if (!downloadDir.exists()) downloadDir.mkdirs()
-        val fileTemplate = "${downloadDir.absolutePath}/%(title).100B.%(ext)s"
-
-        val request = YoutubeDLRequest(validUrl).apply {
-            addOption("--no-warnings")
-            addOption("--no-mtime")
-            addOption("--windows-filenames")
-            addOption("--extractor-args", "youtube:player_client=android,web")
-
-            if (isAudio) {
-                addOption("-x")
-                addOption("--audio-format", "mp3")
-                addOption("--audio-quality", audioBitrate ?: "320K")
-                addOption("-f", "bestaudio/best")
-                addOption("--embed-thumbnail")
-                addOption("--add-metadata")
-                addOption("--convert-thumbnails", "jpg")
-            } else {
-                val res = resolutionHeight ?: 1080
-                addOption("-f", "bestvideo[height<=$res]+bestaudio/best[height<=$res]/best")
-                addOption("--merge-output-format", "mp4")
-                addOption("--embed-thumbnail")
-                addOption("--add-metadata")
-            }
-
-            addOption("-o", fileTemplate)
-        }
-
-        YoutubeDL.getInstance().execute(request) { progress, _, line ->
-            onProgress(progress, line ?: "")
-        }
-
-        downloadDir.listFiles()?.maxByOrNull { it.lastModified() }
-            ?: File(downloadDir, if (isAudio) "audio.mp3" else "video.mp4")
+    private fun downloadDirOrDefault(context: Context): File {
+        val d = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        return if (d.exists()) d else context.filesDir
     }
 }
