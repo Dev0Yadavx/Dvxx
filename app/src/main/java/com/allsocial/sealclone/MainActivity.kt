@@ -599,47 +599,21 @@ fun HomeSearchScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                    .padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
+                // Only back arrow button, count text removed
+                IconButton(
                     onClick = { searchResults = emptyList() },
-                    modifier = Modifier.testTag("btn_back_to_search")
+                    modifier = Modifier
+                        .size(40.dp)
+                        .testTag("btn_back_to_search")
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ArrowBack,
-                            contentDescription = "Back to search",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "New Search",
-                            fontSize = 12.5.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    modifier = Modifier.testTag("search_results_count_badge")
-                ) {
-                    Text(
-                        text = "${searchResults.size} Results",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = "Back",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(24.dp)
                     )
                 }
             }
@@ -874,57 +848,56 @@ fun HomeSearchScreen(
                             Spacer(modifier = Modifier.height(4.dp))
 
                             Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    text = item.uploader.ifBlank { "YouTube / Media" },
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                if (item.duration.isNotBlank()) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.weight(1f).padding(end = 8.dp)
+                                ) {
                                     Text(
-                                        text = "•",
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontSize = 12.sp
+                                        text = item.uploader.ifBlank { "YouTube / Media" },
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
-                                    Text(
-                                        text = item.duration,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontSize = 12.sp
+                                    if (item.duration.isNotBlank()) {
+                                        Text(
+                                            text = "•",
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontSize = 12.sp
+                                        )
+                                        Text(
+                                            text = item.duration,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                }
+
+                                // Search results download button -> FAB style with Square background (14dp rounded corner) and Download icon
+                                FilledIconButton(
+                                    onClick = { handleTargetSelection(item.url) },
+                                    shape = RoundedCornerShape(14.dp),
+                                    colors = IconButtonDefaults.filledIconButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    ),
+                                    modifier = Modifier
+                                        .size(46.dp)
+                                        .testTag("btn_item_download_${item.id}")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Download,
+                                        contentDescription = "Download",
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.size(22.dp)
                                     )
                                 }
-                            }
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            // Down me Download Button -> Tap to open Quality option (Square shape)
-                            Button(
-                                onClick = { handleTargetSelection(item.url) },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(44.dp)
-                                    .testTag("btn_item_download_${item.id}"),
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary,
-                                    contentColor = MaterialTheme.colorScheme.onPrimary
-                                )
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Download,
-                                    contentDescription = "Open Quality Options",
-                                    tint = MaterialTheme.colorScheme.onPrimary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Choose Quality & Download",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.5.sp,
-                                    color = MaterialTheme.colorScheme.onPrimary
-                                )
                             }
                         }
                     }
@@ -1063,15 +1036,26 @@ fun TasksListScreen(
         return
     }
 
-    LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    // Keep track of paused state per task for user control
+    var pausedTaskIds by remember { mutableStateOf(setOf<String>()) }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .testTag("tasks_list"),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
         items(tasks, key = { it.id }) { task ->
+            val isPaused = pausedTaskIds.contains(task.id)
+
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 6.dp)
                     .testTag("task_card_${task.id}"),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
                 Row(
                     modifier = Modifier
@@ -1079,11 +1063,11 @@ fun TasksListScreen(
                         .padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Art Cover (Thumbnail)
+                    // Aesthetic Art Cover with Pause/Resume Button & Progress Indicator overlay
                     Box(
                         modifier = Modifier
-                            .size(68.dp)
-                            .clip(RoundedCornerShape(12.dp))
+                            .size(76.dp)
+                            .clip(RoundedCornerShape(14.dp))
                             .background(MaterialTheme.colorScheme.surfaceVariant),
                         contentAlignment = Alignment.Center
                     ) {
@@ -1099,13 +1083,73 @@ fun TasksListScreen(
                                 imageVector = Icons.Outlined.Downloading,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(28.dp)
+                                modifier = Modifier.size(30.dp)
+                            )
+                        }
+
+                        // Subtle dark gradient scrim for aesthetic contrast
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.38f))
+                        )
+
+                        // Circular Progress Indicator hugging the action button
+                        CircularProgressIndicator(
+                            progress = { (task.progress / 100f).coerceIn(0f, 1f) },
+                            modifier = Modifier.size(46.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = Color.White.copy(alpha = 0.25f),
+                            strokeWidth = 3.dp
+                        )
+
+                        // Tap to Stop / Resume button placed right over the art cover
+                        Surface(
+                            shape = CircleShape,
+                            color = Color.Black.copy(alpha = 0.55f),
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clickable {
+                                    pausedTaskIds = if (isPaused) {
+                                        pausedTaskIds - task.id
+                                    } else {
+                                        pausedTaskIds + task.id
+                                    }
+                                }
+                                .testTag("task_pause_resume_${task.id}")
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
+                                    contentDescription = if (isPaused) "Resume download" else "Pause download",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+
+                        // Bottom progress % pill over the art cover
+                        Surface(
+                            shape = RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp),
+                            color = Color.Black.copy(alpha = 0.72f),
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                        ) {
+                            Text(
+                                text = if (isPaused) "Paused" else "${task.progress.toInt()}%",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isPaused) Color(0xFFFBBF24) else Color.White,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                modifier = Modifier.padding(vertical = 1.dp)
                             )
                         }
                     }
 
                     Spacer(modifier = Modifier.width(12.dp))
 
+                    // Details Column: Clean M3 typography without text background
                     Column(modifier = Modifier.weight(1f)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -1113,49 +1157,65 @@ fun TasksListScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                task.title,
+                                text = task.title,
                                 color = MaterialTheme.colorScheme.onSurface,
-                                fontSize = 13.sp,
+                                fontSize = 14.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f)
                             )
+
                             IconButton(
                                 onClick = { onCancelTask(task.id) },
                                 modifier = Modifier
-                                    .size(28.dp)
+                                    .size(32.dp)
                                     .testTag("cancel_task_${task.id}")
                             ) {
                                 Icon(
-                                    Icons.Default.Close,
+                                    imageVector = Icons.Default.Close,
                                     contentDescription = "Cancel download",
-                                    tint = Color.Red.copy(alpha = 0.8f),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
 
+                        // Linear progress bar matching M3 aesthetic
                         LinearProgressIndicator(
                             progress = { (task.progress / 100f).coerceIn(0f, 1f) },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(6.dp)
+                                .height(5.dp)
                                 .clip(RoundedCornerShape(3.dp)),
-                            color = MaterialTheme.colorScheme.primary
+                            color = if (isPaused) Color(0xFFFBBF24) else MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant
                         )
 
                         Spacer(modifier = Modifier.height(6.dp))
 
-                        // Only download progress shown
-                        Text(
-                            "${task.progress.toInt()}%",
-                            color = MaterialTheme.colorScheme.primary,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (isPaused) "Download paused" else "Downloading • ${task.progress.toInt()}%",
+                                color = if (isPaused) Color(0xFFFBBF24) else MaterialTheme.colorScheme.primary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+
+                            if (task.speed.isNotBlank()) {
+                                Text(
+                                    text = task.speed,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -1170,31 +1230,41 @@ fun LibraryHistoryScreen(
     onDelete: (DownloadedRecord) -> Unit,
     onOpenFile: (DownloadedRecord) -> Unit
 ) {
+    val context = LocalContext.current
+
     if (records.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("No downloads in library", color = Color.Gray, fontSize = 14.sp)
+            Text("No downloads in library", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
         }
         return
     }
 
-    LazyColumn(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         items(records) { item ->
+            var showMenu by remember { mutableStateOf(false) }
+
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 4.dp)
                     .clickable { onOpenFile(item) },
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
             ) {
                 Row(
-                    modifier = Modifier.padding(10.dp),
+                    modifier = Modifier.padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Aesthetic Art Cover (Thumbnail) with Play action overlay
                     Box(
                         modifier = Modifier
                             .size(68.dp)
-                            .clip(RoundedCornerShape(10.dp))
+                            .clip(RoundedCornerShape(12.dp))
                             .background(MaterialTheme.colorScheme.surfaceVariant),
                         contentAlignment = Alignment.Center
                     ) {
@@ -1213,19 +1283,176 @@ fun LibraryHistoryScreen(
                                 modifier = Modifier.size(28.dp)
                             )
                         }
+
+                        // Scrim and central play icon over art cover
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.3f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = Color.Black.copy(alpha = 0.5f),
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = "Play",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // File type pill overlay
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color.Black.copy(alpha = 0.75f),
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(3.dp)
+                        ) {
+                            Text(
+                                text = item.ext.uppercase(),
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                            )
+                        }
                     }
+
                     Spacer(modifier = Modifier.width(12.dp))
+
+                    // Title & info column - clean typography, no text background
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(item.title, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            "${item.quality} • ${item.ext.uppercase()} • ${item.fileSize}",
-                            color = MaterialTheme.colorScheme.primary,
-                            fontSize = 11.sp
+                            text = item.title,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = item.ext.uppercase(),
+                                color = MaterialTheme.colorScheme.primary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "•",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp
+                            )
+                            Text(
+                                text = item.fileSize,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp
+                            )
+                            if (item.quality.isNotBlank()) {
+                                Text(
+                                    text = "•",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.sp
+                                )
+                                Text(
+                                    text = item.quality,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
                     }
-                    IconButton(onClick = { onDelete(item) }) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red.copy(0.8f))
+
+                    // 3-dot overflow menu
+                    Box {
+                        IconButton(
+                            onClick = { showMenu = true },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "More options",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Open / Play") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    onOpenFile(item)
+                                }
+                            )
+
+                            DropdownMenuItem(
+                                text = { Text("Share") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Share,
+                                        contentDescription = null
+                                    )
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    try {
+                                        val file = File(item.filePath)
+                                        if (file.exists()) {
+                                            val uri = FileProvider.getUriForFile(
+                                                context,
+                                                "${context.packageName}.fileprovider",
+                                                file
+                                            )
+                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                type = if (item.ext.equals("mp3", ignoreCase = true)) "audio/*" else "video/*"
+                                                putExtra(Intent.EXTRA_STREAM, uri)
+                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            }
+                                            context.startActivity(Intent.createChooser(shareIntent, "Share Media"))
+                                        }
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "Error sharing file: ${e.message}", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            )
+
+                            DropdownMenuItem(
+                                text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.DeleteOutline,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    onDelete(item)
+                                }
+                            )
+                        }
                     }
                 }
             }

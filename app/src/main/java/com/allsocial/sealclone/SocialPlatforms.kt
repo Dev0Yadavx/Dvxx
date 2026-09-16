@@ -1,5 +1,6 @@
 package com.allsocial.sealclone
 
+import androidx.annotation.DrawableRes
 import androidx.compose.ui.graphics.Color
 
 data class SocialPlatformInfo(
@@ -7,6 +8,7 @@ data class SocialPlatformInfo(
     val name: String,
     val shortName: String,
     val brandColor: Color,
+    @DrawableRes val iconRes: Int,
     val domainKeywords: List<String>,
     val badgeLabel: String,
     val sampleTip: String
@@ -19,6 +21,7 @@ object SocialPlatformRegistry {
             name = "YouTube",
             shortName = "YT",
             brandColor = Color(0xFFFF0000),
+            iconRes = R.drawable.ic_social_youtube,
             domainKeywords = listOf("youtube.com", "youtu.be"),
             badgeLabel = "4K / Shorts / MP3",
             sampleTip = "Supports 4K, 1080p, Shorts & high-bitrate 320k MP3 audio"
@@ -28,6 +31,7 @@ object SocialPlatformRegistry {
             name = "Instagram",
             shortName = "IG",
             brandColor = Color(0xFFE1306C),
+            iconRes = R.drawable.ic_social_instagram,
             domainKeywords = listOf("instagram.com", "instagr.am"),
             badgeLabel = "Reels & Posts",
             sampleTip = "Download Instagram Reels, Video posts, and IGTV without watermark"
@@ -37,6 +41,7 @@ object SocialPlatformRegistry {
             name = "TikTok",
             shortName = "TT",
             brandColor = Color(0xFF00F2FE),
+            iconRes = R.drawable.ic_social_tiktok,
             domainKeywords = listOf("tiktok.com", "douyin.com"),
             badgeLabel = "HD / No Watermark",
             sampleTip = "Download TikTok clips in original crisp HD quality without watermark"
@@ -46,6 +51,7 @@ object SocialPlatformRegistry {
             name = "Facebook",
             shortName = "FB",
             brandColor = Color(0xFF1877F2),
+            iconRes = R.drawable.ic_social_facebook,
             domainKeywords = listOf("facebook.com", "fb.watch", "fb.com"),
             badgeLabel = "Watch & Reels",
             sampleTip = "Direct link download for Facebook Watch, Public Reels & Videos"
@@ -55,6 +61,7 @@ object SocialPlatformRegistry {
             name = "X (Twitter)",
             shortName = "X",
             brandColor = Color(0xFF1DA1F2),
+            iconRes = R.drawable.ic_social_twitter,
             domainKeywords = listOf("twitter.com", "x.com"),
             badgeLabel = "Video & GIF",
             sampleTip = "Save Twitter/X status video clips and animated GIFs in top bitrate"
@@ -64,6 +71,7 @@ object SocialPlatformRegistry {
             name = "Reddit",
             shortName = "RD",
             brandColor = Color(0xFFFF4500),
+            iconRes = R.drawable.ic_social_reddit,
             domainKeywords = listOf("reddit.com", "v.redd.it"),
             badgeLabel = "Combined Audio",
             sampleTip = "Downloads Reddit v.redd.it videos automatically merged with audio"
@@ -73,6 +81,7 @@ object SocialPlatformRegistry {
             name = "Pinterest",
             shortName = "PIN",
             brandColor = Color(0xFFE60023),
+            iconRes = R.drawable.ic_social_pinterest,
             domainKeywords = listOf("pinterest.com", "pin.it"),
             badgeLabel = "Idea Pins & MP4",
             sampleTip = "Directly extracts Pinterest Idea Pins and video pins in original MP4"
@@ -82,6 +91,7 @@ object SocialPlatformRegistry {
             name = "SoundCloud",
             shortName = "SC",
             brandColor = Color(0xFFFF5500),
+            iconRes = R.drawable.ic_social_soundcloud,
             domainKeywords = listOf("soundcloud.com"),
             badgeLabel = "HQ MP3 Music",
             sampleTip = "Extracts tracks and sets in maximum stream fidelity MP3 audio"
@@ -91,6 +101,7 @@ object SocialPlatformRegistry {
             name = "Spotify",
             shortName = "SPOT",
             brandColor = Color(0xFF1DB954),
+            iconRes = R.drawable.ic_social_spotify,
             domainKeywords = listOf("spotify.com"),
             badgeLabel = "Audio Search",
             sampleTip = "Searches matching highest quality audio tracks for Spotify links"
@@ -100,6 +111,7 @@ object SocialPlatformRegistry {
             name = "Twitch",
             shortName = "TTV",
             brandColor = Color(0xFF9146FF),
+            iconRes = R.drawable.ic_social_twitch,
             domainKeywords = listOf("twitch.tv"),
             badgeLabel = "Clips & VODs",
             sampleTip = "Downloads Twitch stream highlight clips and full VODs"
@@ -109,6 +121,7 @@ object SocialPlatformRegistry {
             name = "Vimeo",
             shortName = "VM",
             brandColor = Color(0xFF1AB7EA),
+            iconRes = R.drawable.ic_social_vimeo,
             domainKeywords = listOf("vimeo.com"),
             badgeLabel = "1080p & 4K",
             sampleTip = "Full high quality Vimeo video download up to 4K resolution"
@@ -118,6 +131,7 @@ object SocialPlatformRegistry {
             name = "Bilibili",
             shortName = "BILI",
             brandColor = Color(0xFF00A1D6),
+            iconRes = R.drawable.ic_social_bilibili,
             domainKeywords = listOf("bilibili.com"),
             badgeLabel = "Anime & HD",
             sampleTip = "Extracts Bilibili anime clips and video streams"

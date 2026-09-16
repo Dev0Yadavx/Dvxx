@@ -419,6 +419,8 @@ fun DownloadedMediaCard(
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showMenu by remember { mutableStateOf(false) }
+
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -429,6 +431,7 @@ fun DownloadedMediaCard(
             containerColor = if (isPlaying) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
             else MaterialTheme.colorScheme.surface
         ),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isPlaying) 3.dp else 1.dp),
         border = if (isPlaying) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null
     ) {
         Row(
@@ -437,11 +440,11 @@ fun DownloadedMediaCard(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Thumbnail / Art Cover with format & duration badges
+            // Aesthetic Art Cover with Play Action & Badges Overlay
             Box(
                 modifier = Modifier
-                    .size(70.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .size(72.dp)
+                    .clip(RoundedCornerShape(14.dp))
                     .background(
                         if (item.isVideo) Color(0xFF1E293B)
                         else MaterialTheme.colorScheme.primaryContainer
@@ -461,18 +464,55 @@ fun DownloadedMediaCard(
                     )
                 )
 
-                // Duration badge
+                // Dark aesthetic scrim
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = if (isPlaying) 0.45f else 0.28f))
+                )
+
+                // Play / Equalizer icon button centered on the art cover
+                Surface(
+                    shape = CircleShape,
+                    color = if (isPlaying) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.55f),
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Default.Equalizer else Icons.Default.PlayArrow,
+                            contentDescription = "Play media directly",
+                            tint = if (isPlaying) Color.Black else Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                // File type badge on top-left of art cover
+                Surface(
+                    shape = RoundedCornerShape(bottomEnd = 6.dp),
+                    color = Color.Black.copy(alpha = 0.75f),
+                    modifier = Modifier.align(Alignment.TopStart)
+                ) {
+                    Text(
+                        text = item.extension.uppercase(),
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                    )
+                }
+
+                // Duration badge at bottom-end of art cover
                 if (item.durationMs > 0) {
                     Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = Color.Black.copy(alpha = 0.75f),
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(4.dp)
+                        shape = RoundedCornerShape(topStart = 6.dp),
+                        color = Color.Black.copy(alpha = 0.8f),
+                        modifier = Modifier.align(Alignment.BottomEnd)
                     ) {
                         Text(
                             text = item.formattedDuration,
-                            fontSize = 9.sp,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Medium,
                             color = Color.White,
                             modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                         )
@@ -482,11 +522,11 @@ fun DownloadedMediaCard(
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Details Column
+            // Details Column - clean M3 typography, no text background
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = item.title,
-                    fontSize = 14.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 2,
@@ -497,21 +537,14 @@ fun DownloadedMediaCard(
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    // Extension badge
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-                    ) {
-                        Text(
-                            text = item.extension,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                        )
-                    }
+                    Text(
+                        text = item.extension.uppercase(),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
 
                     Text(
                         text = "•",
@@ -553,52 +586,67 @@ fun DownloadedMediaCard(
                 }
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
-
-            // Action Buttons: Play (primary), Share, Delete
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                FilledIconButton(
-                    onClick = onPlay,
+            // 3-dot overflow menu for actions (Open, Share, Delete)
+            Box {
+                IconButton(
+                    onClick = { showMenu = true },
                     modifier = Modifier
-                        .size(38.dp)
-                        .testTag("play_button_${item.id}"),
-                    colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = Color.Black
-                    )
+                        .size(36.dp)
+                        .testTag("media_menu_${item.id}")
                 ) {
                     Icon(
-                        imageVector = if (isPlaying) Icons.Default.Equalizer else Icons.Default.PlayArrow,
-                        contentDescription = "Play media directly with ExoPlayer",
-                        modifier = Modifier.size(20.dp)
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "Media options",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
-                IconButton(
-                    onClick = onShare,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .testTag("share_button_${item.id}")
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false }
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Share,
-                        contentDescription = "Share media",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
+                    DropdownMenuItem(
+                        text = { Text("Open / Play") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        },
+                        onClick = {
+                            showMenu = false
+                            onPlay()
+                        }
                     )
-                }
 
-                IconButton(
-                    onClick = onDelete,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .testTag("delete_button_${item.id}")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.DeleteOutline,
-                        contentDescription = "Delete media",
-                        tint = Color.Red.copy(alpha = 0.75f),
-                        modifier = Modifier.size(18.dp)
+                    DropdownMenuItem(
+                        text = { Text("Share") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = null
+                            )
+                        },
+                        onClick = {
+                            showMenu = false
+                            onShare()
+                        }
+                    )
+
+                    DropdownMenuItem(
+                        text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.DeleteOutline,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        },
+                        onClick = {
+                            showMenu = false
+                            onDelete()
+                        }
                     )
                 }
             }

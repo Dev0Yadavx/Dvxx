@@ -23,6 +23,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Seal"
+rootProject.name = "Remix Seal"
 
 include(":app")

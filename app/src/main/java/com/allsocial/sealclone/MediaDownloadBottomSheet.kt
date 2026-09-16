@@ -1,6 +1,7 @@
 package com.allsocial.sealclone
 
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -9,8 +10,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -150,106 +154,161 @@ fun DownloadOptionsSheet(
             }
         }
 
-        // ================= AUDIO SECTION =================
-        Text(
-            text = "Audio Qualities (MP3 with Cover & Tags)",
-            color = MaterialTheme.colorScheme.primary,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold
-        )
+        // Play stream preview button
+        OutlinedButton(
+            onClick = { onPlayStream(video.url) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(46.dp),
+            shape = RoundedCornerShape(24.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+        ) {
+            Icon(
+                Icons.Default.PlayArrow,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                "Play Stream Preview",
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
 
-        val audioQualities = listOf(
-            Triple("320K", "320 kbps", "~9.5 MB"),
-            Triple("192K", "192 kbps", "~5.8 MB"),
-            Triple("64K", "64 kbps", "~2.1 MB")
-        )
+        Spacer(modifier = Modifier.height(16.dp))
 
+        // ================= 1. AUDIO QUALITIES (UPER AUDIO) - LINE BY LINE =================
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Headphones,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = "Audio Qualities (MP3)",
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        val audioQualities = listOf(
+            Triple("320K", "320 kbps (Studio Quality)", "~9.5 MB"),
+            Triple("256K", "256 kbps (High Quality)", "~7.5 MB"),
+            Triple("192K", "192 kbps (Standard Quality)", "~5.8 MB"),
+            Triple("128K", "128 kbps (Compact)", "~3.9 MB"),
+            Triple("64K", "64 kbps (Low Data Saver)", "~2.1 MB")
+        )
+
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             audioQualities.forEach { (qualityKey, label, sizeEst) ->
                 val isSelected = selectedChoice.isAudio && selectedChoice.bitrate == qualityKey
-                Button(
-                    onClick = {
-                        selectedChoice = QualityChoice(
-                            label = "$label MP3",
-                            isAudio = true,
-                            bitrate = qualityKey,
-                            sizeEstimate = sizeEst
-                        )
-                    },
+                Surface(
                     modifier = Modifier
-                        .weight(1f)
+                        .fillMaxWidth()
+                        .clickable {
+                            selectedChoice = QualityChoice(
+                                label = "$label MP3",
+                                isAudio = true,
+                                bitrate = qualityKey,
+                                sizeEstimate = sizeEst
+                            )
+                        }
                         .testTag("btn_audio_$qualityKey"),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer
-                    ),
-                    contentPadding = PaddingValues(vertical = 8.dp, horizontal = 4.dp)
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    border = if (isSelected) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (isSelected) {
                                 Icon(
-                                    Icons.Default.Check,
+                                    imageVector = Icons.Default.CheckCircle,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onPrimary,
-                                    modifier = Modifier.size(12.dp)
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
                                 )
-                                Spacer(modifier = Modifier.width(2.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
                             }
                             Text(
                                 text = label,
-                                fontSize = 11.5.sp,
-                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer,
-                                fontWeight = FontWeight.Bold
+                                fontSize = 13.sp,
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                             )
                         }
-                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = sizeEst,
-                            fontSize = 10.sp,
-                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f),
-                            fontWeight = FontWeight.Medium
+                            fontSize = 11.sp,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(18.dp))
 
-        // ================= VIDEO SECTION =================
-        Text(
-            text = "Video Qualities (MP4)",
-            color = MaterialTheme.colorScheme.primary,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold
-        )
+        // ================= 2. VIDEO QUALITIES (NICHE VIDEO) - LINE BY LINE =================
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Videocam,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = "Video Qualities (MP4)",
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
 
         val videoQualities = listOf(
             Triple("4K Ultra HD (2160p)", 2160, "~350 MB"),
             Triple("2K Quad HD (1440p)", 1440, "~180 MB"),
             Triple("1080p Full HD", 1080, "~85 MB"),
             Triple("720p HD", 720, "~42 MB"),
-            Triple("360p SD", 360, "~18 MB")
+            Triple("480p SD", 480, "~26 MB"),
+            Triple("360p Low", 360, "~18 MB")
         )
 
-        Column(modifier = Modifier.padding(vertical = 4.dp)) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
             videoQualities.forEach { (title, height, sizeEst) ->
                 val isSelected = !selectedChoice.isAudio && selectedChoice.height == height
-                Row(
+                Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 3.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(
-                            if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-                            else MaterialTheme.colorScheme.surfaceVariant
-                        )
                         .clickable {
                             selectedChoice = QualityChoice(
                                 label = title,
@@ -258,77 +317,50 @@ fun DownloadOptionsSheet(
                                 sizeEstimate = sizeEst
                             )
                         }
-                        .padding(horizontal = 12.dp, vertical = 7.dp)
                         .testTag("video_quality_row_$height"),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    border = if (isSelected) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (isSelected) {
-                            Icon(
-                                Icons.Default.Check,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                        }
-                        Text(
-                            text = title,
-                            color = if (isSelected) MaterialTheme.colorScheme.primary else Color.White,
-                            fontSize = 13.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                        )
-                    }
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
-                            modifier = Modifier.padding(end = 8.dp)
-                        ) {
-                            Text(
-                                text = sizeEst,
-                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-
-                        Button(
-                            onClick = {
-                                selectedChoice = QualityChoice(
-                                    label = title,
-                                    isAudio = false,
-                                    height = height,
-                                    sizeEstimate = sizeEst
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
                                 )
-                                onStartDownload(video.url, height, false, null, video.title, video.thumbnail)
-                                onDismissRequest()
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
-                            modifier = Modifier.testTag("btn_video_save_$height")
-                        ) {
-                            Icon(
-                                Icons.Default.Download,
-                                contentDescription = null,
-                                tint = Color.Black,
-                                modifier = Modifier.size(13.dp)
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
+                            Text(
+                                text = title,
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                                fontSize = 13.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Save", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
+
+                        Text(
+                            text = sizeEst,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
-        // ================= DOWNLOAD NOW BUTTON =================
+        // ================= 3. TAP TO DOWNLOAD NOW (FULL ROUNDED M3 BUTTON) =================
         Button(
             onClick = {
                 onStartDownload(
@@ -343,13 +375,14 @@ fun DownloadOptionsSheet(
             },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(50.dp)
+                .height(54.dp)
                 .testTag("btn_download_now_bottom_sheet"),
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(28.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary
-            )
+            ),
+            elevation = ButtonDefaults.buttonElevation(defaultElevation = 3.dp)
         ) {
             Icon(
                 Icons.Default.Download,
@@ -359,7 +392,7 @@ fun DownloadOptionsSheet(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = "Download Now (${selectedChoice.label} • ${selectedChoice.sizeEstimate})",
+                text = "Tap To Download Now • ${selectedChoice.label} (${selectedChoice.sizeEstimate})",
                 color = MaterialTheme.colorScheme.onPrimary,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold

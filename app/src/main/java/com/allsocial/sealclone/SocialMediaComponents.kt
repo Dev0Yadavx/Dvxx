@@ -23,11 +23,9 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -45,6 +43,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -60,19 +59,22 @@ fun SmallSearchUrlBox(
     value: String,
     onValueChange: (String) -> Unit,
     onSearch: () -> Unit,
-    onPaste: () -> Unit,
-    onClear: () -> Unit,
+    onPasteClick: () -> Unit = {},
+    onPaste: () -> Unit = onPasteClick,
+    onClear: () -> Unit = { onValueChange("") },
+    placeholder: String = "Search song or paste media URL...",
     modifier: Modifier = Modifier
 ) {
+    val actualPaste = if (onPaste != onPasteClick && onPaste != {}) onPaste else onPasteClick
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .height(50.dp)
             .testTag("small_search_url_box"),
-        shape = RoundedCornerShape(25.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 2.dp,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+        shape = RoundedCornerShape(26.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)),
+        tonalElevation = 1.dp
     ) {
         Row(
             modifier = Modifier
@@ -80,48 +82,55 @@ fun SmallSearchUrlBox(
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Icon at start: Link if empty, Search if text present
             Icon(
-                imageVector = Icons.Default.Link,
+                imageVector = if (value.isBlank()) Icons.Default.Link else Icons.Default.Search,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(18.dp)
             )
 
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(10.dp))
 
-            Box(modifier = Modifier.weight(1f)) {
+            // Text input field
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.CenterStart
+            ) {
                 if (value.isEmpty()) {
                     Text(
-                        text = "Search song or paste media URL...",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
-                        fontSize = 13.sp,
+                        text = placeholder,
+                        fontSize = 13.5.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+
                 BasicTextField(
                     value = value,
                     onValueChange = onValueChange,
                     singleLine = true,
                     textStyle = TextStyle(
-                        color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 13.5.sp,
-                        fontWeight = FontWeight.Medium
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Normal
                     ),
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(onSearch = { onSearch() }),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag("search_text_input")
+                        .testTag("input_search_url")
                 )
             }
 
+            // Clear text button if input exists
             if (value.isNotEmpty()) {
                 IconButton(
                     onClick = onClear,
                     modifier = Modifier
-                        .size(30.dp)
+                        .size(28.dp)
                         .testTag("btn_search_clear")
                 ) {
                     Icon(
@@ -131,12 +140,13 @@ fun SmallSearchUrlBox(
                         modifier = Modifier.size(16.dp)
                     )
                 }
+                Spacer(modifier = Modifier.width(4.dp))
             }
 
-            // Paste button
+            // Compact Paste Button
             Surface(
-                onClick = onPaste,
-                shape = RoundedCornerShape(16.dp),
+                onClick = actualPaste,
+                shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 modifier = Modifier
                     .height(32.dp)
@@ -188,73 +198,58 @@ fun SmallSearchUrlBox(
 
 /**
  * Social media platform icons row placed below the search box.
+ * Displays only authentic small-size SVG original brand icons without any text labels,
+ * styled in modern Material Design 3 surface containers.
  */
 @Composable
 fun SocialMediaPlatformsBar(
     onPlatformClick: (SocialPlatformInfo) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier = modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Share,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(14.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "Supported Platforms",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-            Text(
-                text = "Tap for Quick Paste",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Medium
-            )
-        }
-
-        LazyRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("social_media_platforms_row"),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
-        ) {
-            items(SocialPlatformRegistry.platforms) { platform ->
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = platform.brandColor,
-                    tonalElevation = 4.dp,
-                    shadowElevation = 2.dp,
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clickable { onPlatformClick(platform) }
-                        .testTag("social_platform_${platform.id}")
+    LazyRow(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("social_media_platforms_row"),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+    ) {
+        items(SocialPlatformRegistry.platforms) { platform ->
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp),
+                tonalElevation = 2.dp,
+                shadowElevation = 1.dp,
+                border = BorderStroke(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                ),
+                modifier = Modifier
+                    .size(42.dp)
+                    .clickable { onPlatformClick(platform) }
+                    .testTag("social_platform_${platform.id}")
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.fillMaxSize()
                 ) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                        Text(
-                            text = platform.shortName,
-                            color = Color.White,
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                    }
+                    Icon(
+                        painter = painterResource(id = platform.iconRes),
+                        contentDescription = platform.name,
+                        tint = Color.Unspecified, // Uses the original SVG vector colors
+                        modifier = Modifier.size(22.dp)
+                    )
                 }
             }
         }
     }
+}
+
+/**
+ * Helper to get M3 surface color at elevation without importing internal experimental APIs.
+ */
+@Composable
+private fun androidx.compose.material3.ColorScheme.surfaceColorAtElevation(elevation: androidx.compose.ui.unit.Dp): Color {
+    return if (elevation == 0.dp) surface else surfaceVariant.copy(alpha = 0.6f)
 }
 
 /**

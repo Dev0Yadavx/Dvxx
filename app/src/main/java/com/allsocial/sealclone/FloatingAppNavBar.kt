@@ -26,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -51,32 +52,28 @@ fun FloatingAppNavBar(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+            .padding(horizontal = 24.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center
     ) {
+        // Full Rounded & Floating Pill Style Surface
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(66.dp)
+                .height(64.dp)
                 .testTag("floating_navigation_bar"),
-            shape = RoundedCornerShape(
-                topStart = 28.dp,
-                topEnd = 28.dp,
-                bottomStart = 24.dp,
-                bottomEnd = 24.dp
-            ),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp,
-            shadowElevation = 14.dp,
+            shape = RoundedCornerShape(32.dp),
+            color = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp),
+            tonalElevation = 8.dp,
+            shadowElevation = 16.dp,
             border = BorderStroke(
                 width = 1.dp,
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
             )
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 8.dp),
+                    .padding(horizontal = 10.dp),
                 horizontalArrangement = Arrangement.SpaceAround,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -90,14 +87,15 @@ fun FloatingAppNavBar(
                         label = "navPillAlpha"
                     )
 
+                    // Full rounded pill background for active tab
                     Surface(
                         onClick = { onTabSelected(tab) },
-                        shape = RoundedCornerShape(20.dp),
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f * pillAlpha),
+                        shape = RoundedCornerShape(24.dp),
+                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
                         modifier = Modifier.testTag("tab_${tab.name.lowercase()}")
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.Center
                         ) {
@@ -120,7 +118,7 @@ fun FloatingAppNavBar(
                                 Icon(
                                     imageVector = if (isSelected) tab.activeIcon else tab.inactiveIcon,
                                     contentDescription = tab.label,
-                                    tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                    tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(22.dp)
                                 )
                             }
@@ -134,7 +132,7 @@ fun FloatingAppNavBar(
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
                                         text = tab.label,
-                                        color = MaterialTheme.colorScheme.primary,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold,
                                         maxLines = 1

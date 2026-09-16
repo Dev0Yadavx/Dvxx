@@ -3,7 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="10dp"
+    android:padding="12dp"
     android:background="#1E293B">
 
     <LinearLayout
@@ -14,8 +14,8 @@
 
         <ImageView
             android:id="@+id/notification_art_cover_small"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
             android:scaleType="centerCrop"
             android:src="@drawable/ic_notification_download"
             android:contentDescription="Cover Art" />
@@ -25,7 +25,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginStart="8dp"
+            android:layout_marginStart="10dp"
             android:layout_marginEnd="6dp"
             android:textColor="#FFFFFF"
             android:textSize="13sp"
@@ -44,12 +44,13 @@
             android:text="0%" />
     </LinearLayout>
 
+    <!-- Material Design 3 Linear Progress Bar Pill Track -->
     <ProgressBar
         android:id="@+id/notification_progress_bar_small"
         style="?android:attr/progressBarStyleHorizontal"
         android:layout_width="match_parent"
-        android:layout_height="6dp"
-        android:layout_marginTop="8dp"
+        android:layout_height="5dp"
+        android:layout_marginTop="10dp"
         android:max="100"
         android:progress="0"
         android:progressDrawable="@drawable/custom_progress_bar" />
