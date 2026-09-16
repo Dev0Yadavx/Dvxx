@@ -11,6 +11,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
 
+// Dynamic format data structure
 data class ParsedMediaData(
     val id: String,
     val title: String,
@@ -18,24 +19,20 @@ data class ParsedMediaData(
     val duration: String,
     val thumbnail: String,
     val webUrl: String,
-    val availableVideoHeights: List<Int>,
+    val availableVideoHeights: List<Int>, // Isme real dynamic resolutions aayengi
     val isYouTube: Boolean
 )
 
 object DownloaderEngine {
 
-    // Clean tracking tags across all platforms (igshid, si, fbclid, etc.)
     fun sanitizeUrl(raw: String): String {
         val trimmed = raw.trim()
         val urlMatch = Regex("""(https?://[^\s]+)""").find(trimmed)
         val extracted = urlMatch?.value ?: trimmed
-
-        return extracted
-            .replace(Regex("""[?&](si|igshid|fbclid|utm_[^&=]+)=[^&#]*"""), "")
-            .trimEnd('?', '&')
+        return extracted.replace(Regex("""[?&](si|igshid|fbclid|utm_[^&=]+)=[^&#]*"""), "").trimEnd('?', '&')
     }
 
-    // Inspect stream details and available resolutions
+    // ================= DYNAMIC RESOLUTION FIX HERE =================
     suspend fun inspectUrl(rawUrl: String): ParsedMediaData = withContext(Dispatchers.IO) {
         val cleanUrl = sanitizeUrl(rawUrl)
         val isYt = cleanUrl.contains("youtube.com") || cleanUrl.contains("youtu.be")
@@ -45,8 +42,13 @@ object DownloaderEngine {
             addOption("--dump-single-json")
             addOption("--no-warnings")
             addOption("--ignore-no-formats-error")
+            addOption("--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36") // Universal UA to appear as desktop
+            
+            // Critical YouTube specific flags for deep parsing
             if (isYt) {
-                addOption("--extractor-args", "youtube:player_client=android,web")
+                // explicit clients to force dynamic format list extraction
+                addOption("--extractor-args", "youtube:player_client=web,android,ios") 
+                addOption("--referer", "https://www.youtube.com/")
             }
         }
 
@@ -56,18 +58,21 @@ object DownloaderEngine {
         info.formats?.forEach { fmt ->
             val h = fmt.height ?: 0
             val vcodec = fmt.vcodec ?: "none"
+            val acodec = fmt.acodec ?: "none"
             val ext = (fmt.ext ?: "").lowercase()
 
+            // Skip audio only or illegal extensions to only collect legitimate video heights
             if (h >= 144 && vcodec != "none" && ext != "mhtml" && ext != "webp") {
                 detectedHeights.add(h)
             }
         }
 
-        // Standard fallback if formats list is empty (common in Reels/Direct MP4s)
+        // Agar list abhi bhi empty hai, tabhi standard heights fallback use karein
         val finalHeights = if (detectedHeights.isNotEmpty()) {
             detectedHeights.sortedDescending()
         } else {
-            listOf(1080, 720, 480, 360)
+            // Fallback default list, in case extraction strictly blocked
+            listOf(2160, 1440, 1080, 720, 480, 360)
         }
 
         val durSec = info.duration.toLong()
@@ -85,29 +90,25 @@ object DownloaderEngine {
         )
     }
 
-    // Search query parser (for YouTube searches)
+    // Search query parser
     suspend fun searchYouTubeTop10(query: String): List<SearchItem> = withContext(Dispatchers.IO) {
         val cleanQuery = query.trim()
         val isDirectLink = cleanQuery.startsWith("http://") || cleanQuery.startsWith("https://")
-
+        
         if (isDirectLink) {
-            val item = inspectUrl(cleanQuery)
-            return@withContext listOf(
-                SearchItem(
-                    id = item.id,
-                    title = item.title,
-                    uploader = item.uploader,
-                    duration = item.duration,
-                    thumbnail = item.thumbnail,
-                    url = item.webUrl
+            try {
+                val item = inspectUrl(cleanQuery)
+                return@withContext listOf(
+                    SearchItem(item.id, item.title, item.uploader, item.duration, item.thumbnail, item.webUrl)
                 )
-            )
+            } catch (e: Exception) { return@withContext emptyList() }
         }
 
         EngineInitState.ensureInitialized()
         val request = YoutubeDLRequest("ytsearch10:$cleanQuery").apply {
             addOption("-j")
             addOption("--flat-playlist")
+            addOption("--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
             addOption("--no-warnings")
             addOption("--ignore-errors")
             addOption("--extractor-args", "youtube:player_client=android,web")
@@ -142,7 +143,7 @@ object DownloaderEngine {
         results
     }
 
-    // Direct Stream Extractor for In-App Player
+    // Direct stream for In-App Preview
     suspend fun getStreamUrl(webUrl: String): String = withContext(Dispatchers.IO) {
         val clean = sanitizeUrl(webUrl)
         val isYt = clean.contains("youtube.com") || clean.contains("youtu.be")
@@ -150,8 +151,9 @@ object DownloaderEngine {
         val request = YoutubeDLRequest(clean).apply {
             addOption("-g")
             addOption("-f", "best[ext=mp4]/best")
+            addOption("--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
             if (isYt) {
-                addOption("--extractor-args", "youtube:player_client=android,web")
+                addOption("--extractor-args", "youtube:player_client=web,android")
             }
         }
         val out = try {
@@ -162,13 +164,13 @@ object DownloaderEngine {
         out.lines().firstOrNull { it.startsWith("http") } ?: clean
     }
 
-    // Universal Multi-Quality Download Engine
+    // Download Engine with Scoped Storage fix
     suspend fun executeDownload(
         context: Context,
         rawUrl: String,
         selectedHeight: Int?,
         isAudioOnly: Boolean,
-        audioBitrateKbps: String?, // "320K", "256K", "192K", "128K", "64K"
+        audioBitrateKbps: String?,
         onProgress: (Float, String) -> Unit
     ): File = withContext(Dispatchers.IO) {
         val cleanUrl = sanitizeUrl(rawUrl)
@@ -187,10 +189,11 @@ object DownloaderEngine {
             addOption("--no-warnings")
             addOption("--no-mtime")
             addOption("--windows-filenames")
+            addOption("--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
             addOption("-P", "temp:${tempCache.absolutePath}")
 
             if (isYt) {
-                addOption("--extractor-args", "youtube:player_client=android,web")
+                addOption("--extractor-args", "youtube:player_client=web,android,ios")
             }
 
             if (isAudioOnly) {
@@ -203,7 +206,7 @@ object DownloaderEngine {
                 addOption("--convert-thumbnails", "jpg")
             } else {
                 if (selectedHeight != null) {
-                    addOption("-f", "bestvideo[height<=$selectedHeight]+bestaudio/best[height<=$selectedHeight]/best")
+                    addOption("-f", "bestvideo[height<=$selectedHeight]+bestaudio/bestvideo[height<=$selectedHeight]+bestaudio/best[height<=$selectedHeight]/best")
                 } else {
                     addOption("-f", "bestvideo+bestaudio/best")
                 }
@@ -224,7 +227,6 @@ object DownloaderEngine {
         val savedFile = targetDir.listFiles()?.maxByOrNull { it.lastModified() }
             ?: File(targetDir, if (isAudioOnly) "audio.mp3" else "video.mp4")
 
-        // Broadcast to OS media scanner
         MediaScannerConnection.scanFile(
             context.applicationContext,
             arrayOf(savedFile.absolutePath),
@@ -269,10 +271,11 @@ object DownloaderEngine {
             addOption("--no-warnings")
             addOption("--no-mtime")
             addOption("--windows-filenames")
+            addOption("--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
             addOption("-P", "temp:${tempCache.absolutePath}")
 
             if (isYt) {
-                addOption("--extractor-args", "youtube:player_client=android,web")
+                addOption("--extractor-args", "youtube:player_client=web,android,ios")
             }
 
             if (isAudio) {
@@ -285,7 +288,7 @@ object DownloaderEngine {
                 addOption("--convert-thumbnails", "jpg")
             } else {
                 if (resolutionHeight != null) {
-                    addOption("-f", "bestvideo[height<=$resolutionHeight]+bestaudio/best[height<=$resolutionHeight]/best")
+                    addOption("-f", "bestvideo[height<=$resolutionHeight]+bestaudio/bestvideo[height<=$resolutionHeight]+bestaudio/best[height<=$resolutionHeight]/best")
                 } else {
                     addOption("-f", "bestvideo+bestaudio/best")
                 }
