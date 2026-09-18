@@ -217,18 +217,23 @@ object DownloaderEngine {
             addOption("-o", outputTemplate)
 
             if (isYt) {
-                // Stable client pairing without 403 blocks
-                addOption("--extractor-args", "youtube:player_client=android_creator,ios")
+                addOption("--extractor-args", "youtube:player_client=android,web;formats=missing_pot")
             }
-
             if (isAudioOnly) {
                 addOption("-x")
                 addOption("--audio-format", "mp3")
                 addOption("--audio-quality", audioBitrateKbps ?: "320K")
-                addOption("-f", "ba/b")
+                // Safe audio: pehle best audio dekhega, na mile to video se audio rip karega
+                addOption("-f", "bestaudio/ba/b/best")
             } else {
                 val h = selectedHeight ?: 1080
-                addOption("-f", "bv*[height<=$h]+ba/b[height<=$h]/bestvideo+bestaudio/best")
+                // SEAL PRODUCTION STRING:
+                // 1. Target height ki separate video + audio
+                // 2. Us height se choti koi bhi separate video + audio
+                // 3. Combined single file (jahan audio-video pehle se ek ho, e.g. 360p/720p progressive)
+                // 4. Fallback best
+                val formatChain = "bestvideo[height<=$h]+bestaudio/best[height<=$h]/bestvideo+bestaudio/best"
+                addOption("-f", formatChain)
                 addOption("--merge-output-format", "mp4")
             }
         }
