@@ -1,8 +1,12 @@
 package com.allsocial.sealclone
 
+import android.content.ContentValues
 import android.content.Context
 import android.media.MediaScannerConnection
+import android.net.Uri
+import android.os.Build
 import android.os.Environment
+import android.provider.MediaStore
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
 import com.yausername.youtubedl_android.mapper.VideoInfo
@@ -11,6 +15,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.FileInputStream
 
 // Dynamic format data structure
 data class ParsedMediaData(
@@ -20,7 +25,7 @@ data class ParsedMediaData(
     val duration: String,
     val thumbnail: String,
     val webUrl: String,
-    val availableVideoHeights: List<Int>, // Isme real dynamic resolutions aayengi
+    val availableVideoHeights: List<Int>,
     val isYouTube: Boolean
 )
 
@@ -33,7 +38,6 @@ object DownloaderEngine {
         return extracted.replace(Regex("""[?&](si|igshid|fbclid|utm_[^&=]+)=[^&#]*"""), "").trimEnd('?', '&')
     }
 
-    // ================= DYNAMIC RESOLUTION FIX HERE =================
     suspend fun inspectUrl(rawUrl: String): ParsedMediaData = withContext(Dispatchers.IO) {
         val cleanUrl = sanitizeUrl(rawUrl)
         val isYt = cleanUrl.contains("youtube.com") || cleanUrl.contains("youtu.be")
@@ -44,7 +48,7 @@ object DownloaderEngine {
             addOption("--no-warnings")
             addOption("--no-cache-dir")
             addOption("--ignore-no-formats-error")
-            
+
             // Critical YouTube specific flags for deep parsing
             if (isYt) {
                 addOption("--extractor-args", "youtube:player_client=ios,android_creator")
@@ -80,7 +84,6 @@ object DownloaderEngine {
                     val vcodec = fmt.optString("vcodec", "none")
                     val ext = fmt.optString("ext", "").lowercase()
 
-                    // YouTube ki 720p, 1080p, 4K streams video-only (DASH) hoti hain
                     if (h >= 144 && vcodec != "none" && ext != "mhtml" && ext != "webp") {
                         detectedHeights.add(h)
                     }
@@ -106,11 +109,9 @@ object DownloaderEngine {
             } catch (_: Exception) {}
         }
 
-        // DownloaderEngine.kt ke inspectUrl() ke end me:
         val finalHeights = if (detectedHeights.size > 1) {
             detectedHeights.sortedDescending()
         } else if (isYt) {
-            // YouTube ke liye guarantee 6 options display honge
             listOf(2160, 1440, 1080, 720, 480, 360)
         } else if (detectedHeights.isNotEmpty()) {
             detectedHeights.sortedDescending()
@@ -132,9 +133,7 @@ object DownloaderEngine {
         )
     }
 
-    // 10 Search Results (Streamed JSON)
     suspend fun searchYouTubeTop10(query: String): List<SearchItem> = withContext(Dispatchers.IO) {
-        EngineInitState.ensureInitialized()
         val cleanQuery = query.trim()
         val isDirectLink = cleanQuery.startsWith("http://") || cleanQuery.startsWith("https://")
 
@@ -144,7 +143,7 @@ object DownloaderEngine {
             return@withContext listOf(
                 SearchItem(
                     id = vId,
-                    title = "Selected Media Link",
+                    title = "Media Link",
                     uploader = "Social Media",
                     duration = "HD",
                     thumbnail = if (vId.isNotEmpty()) "https://i.ytimg.com/vi/$vId/hqdefault.jpg" else "",
@@ -158,8 +157,6 @@ object DownloaderEngine {
             addOption("--flat-playlist")
             addOption("--no-warnings")
             addOption("--ignore-errors")
-            addOption("--no-cache-dir")
-            addOption("--extractor-args", "youtube:player_client=android_creator,ios")
         }
 
         val results = mutableListOf<SearchItem>()
@@ -191,7 +188,115 @@ object DownloaderEngine {
         results
     }
 
-    // In-App Direct Stream Player
+    // 100% Guaranteed Download Engine
+    suspend fun executeDownload(
+        context: Context,
+        rawUrl: String,
+        selectedHeight: Int?,
+        isAudioOnly: Boolean,
+        audioBitrateKbps: String?,
+        onProgress: (Float, String) -> Unit
+    ): File = withContext(Dispatchers.IO) {
+        EngineInitState.ensureInitialized(context)
+        val cleanUrl = sanitizeUrl(rawUrl)
+        val isYt = cleanUrl.contains("youtube.com") || cleanUrl.contains("youtu.be")
+
+        // Private directory to avoid Android Scoped Storage restriction during yt-dlp/ffmpeg execution
+        val workingDir = File(context.getExternalFilesDir(null), "downloads_cache").apply {
+            if (!exists()) mkdirs()
+        }
+
+        val outputTemplate = "${workingDir.absolutePath}/%(title).80B.%(ext)s"
+
+        val request = YoutubeDLRequest(cleanUrl).apply {
+            addOption("--no-warnings")
+            addOption("--no-mtime")
+            addOption("--windows-filenames")
+            addOption("--no-check-certificates")
+            addOption("-P", workingDir.absolutePath)
+            addOption("-o", outputTemplate)
+
+            if (isYt) {
+                // Stable client pairing without 403 blocks
+                addOption("--extractor-args", "youtube:player_client=android_creator,ios")
+            }
+
+            if (isAudioOnly) {
+                addOption("-x")
+                addOption("--audio-format", "mp3")
+                addOption("--audio-quality", audioBitrateKbps ?: "320K")
+                addOption("-f", "ba/b")
+            } else {
+                val h = selectedHeight ?: 1080
+                addOption("-f", "bv*[height<=$h]+ba/b[height<=$h]/bestvideo+bestaudio/best")
+                addOption("--merge-output-format", "mp4")
+            }
+        }
+
+        // Run engine with progress throttling to prevent log flood
+        var lastProgressReportTime = 0L
+        YoutubeDL.getInstance().execute(request) { progress, _, line ->
+            val now = System.currentTimeMillis()
+            if (now - lastProgressReportTime >= 250L || progress >= 100f) {
+                lastProgressReportTime = now
+                onProgress(progress, line ?: "")
+            }
+        }
+
+        // Get created file in internal cache
+        val downloadedFile = workingDir.listFiles()?.maxByOrNull { it.lastModified() }
+            ?: throw IllegalStateException("Download file was not found")
+
+        // Move to public Downloads via MediaStore
+        val finalPublicFile = copyToPublicDownloads(context, downloadedFile, isAudioOnly)
+        downloadedFile.delete()
+
+        finalPublicFile
+    }
+
+    // MediaStore Resolver to make file visible in Phone Gallery / File Manager
+    private fun copyToPublicDownloads(context: Context, srcFile: File, isAudio: Boolean): File {
+        val mimeType = if (isAudio) "audio/mpeg" else "video/mp4"
+        val fileName = srcFile.name
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val collection: Uri = if (isAudio) {
+                MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            } else {
+                MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            }
+
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, if (isAudio) Environment.DIRECTORY_MUSIC else Environment.DIRECTORY_DOWNLOADS)
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+
+            val uri = context.contentResolver.insert(collection, values)
+            if (uri != null) {
+                context.contentResolver.openOutputStream(uri)?.use { out ->
+                    FileInputStream(srcFile).use { input ->
+                        input.copyTo(out)
+                    }
+                }
+                values.clear()
+                values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                context.contentResolver.update(uri, values, null, null)
+            }
+        } else {
+            val targetDir = Environment.getExternalStoragePublicDirectory(
+                if (isAudio) Environment.DIRECTORY_MUSIC else Environment.DIRECTORY_DOWNLOADS
+            )
+            val dest = File(targetDir, fileName)
+            srcFile.copyTo(dest, overwrite = true)
+            MediaScannerConnection.scanFile(context, arrayOf(dest.absolutePath), arrayOf(mimeType), null)
+            return dest
+        }
+
+        return File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), fileName)
+    }
+
     suspend fun getStreamUrl(webUrl: String): String = withContext(Dispatchers.IO) {
         EngineInitState.ensureInitialized()
         val clean = sanitizeUrl(webUrl)
@@ -212,86 +317,6 @@ object DownloaderEngine {
         out.lines().firstOrNull { it.startsWith("http") } ?: clean
     }
 
-    // 100% Guaranteed Download Logic (No 403 & All Qualities)
-    suspend fun executeDownload(
-        context: Context,
-        rawUrl: String,
-        selectedHeight: Int?,
-        isAudioOnly: Boolean,
-        audioBitrateKbps: String?,
-        onProgress: (Float, String) -> Unit
-    ): File = withContext(Dispatchers.IO) {
-        EngineInitState.ensureInitialized(context)
-        val cleanUrl = sanitizeUrl(rawUrl)
-        val isYt = cleanUrl.contains("youtube.com") || cleanUrl.contains("youtu.be")
-
-        val targetDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-        if (!targetDir.exists()) targetDir.mkdirs()
-
-        val tempCache = File(context.cacheDir, "seal_tmp_${System.currentTimeMillis()}")
-        if (!tempCache.exists()) tempCache.mkdirs()
-
-        val fileNamePattern = "${targetDir.absolutePath}/%(title).100B.%(ext)s"
-
-        val request = YoutubeDLRequest(cleanUrl).apply {
-            addOption("--no-warnings")
-            addOption("--no-mtime")
-            addOption("--no-cache-dir")
-            addOption("--windows-filenames")
-            addOption("--no-check-certificates")
-            addOption("-P", "temp:${tempCache.absolutePath}")
-
-            // 403 Bypass Client for YouTube
-            if (isYt) {
-                addOption("--extractor-args", "youtube:player_client=android_creator,ios")
-            }
-
-            if (isAudioOnly) {
-                // Audio conversion: Auto pick best available and convert to target bitrate
-                addOption("-x")
-                addOption("--audio-format", "mp3")
-                addOption("--audio-quality", audioBitrateKbps ?: "320K")
-                addOption("-f", "ba/b")
-                addOption("--embed-thumbnail")
-                addOption("--add-metadata")
-                addOption("--convert-thumbnails", "jpg")
-            } else {
-                val h = selectedHeight ?: 1080
-                // Step-down format selector: Requested Height -> Below Height -> Combined Best
-                addOption("-f", "bv*[height<=$h]+ba/b[height<=$h]/bestvideo+bestaudio/best")
-                addOption("--merge-output-format", "mp4")
-                addOption("--embed-thumbnail")
-                addOption("--add-metadata")
-            }
-
-            addOption("-o", fileNamePattern)
-        }
-
-        var lastProgressReportTime = 0L
-        YoutubeDL.getInstance().execute(request) { progress, _, line ->
-            val now = System.currentTimeMillis()
-            if (now - lastProgressReportTime >= 250L || progress >= 100f) {
-                lastProgressReportTime = now
-                onProgress(progress, line ?: "")
-            }
-        }
-
-        tempCache.deleteRecursively()
-
-        val savedFile = targetDir.listFiles()?.maxByOrNull { it.lastModified() }
-            ?: File(targetDir, if (isAudioOnly) "audio.mp3" else "video.mp4")
-
-        MediaScannerConnection.scanFile(
-            context.applicationContext,
-            arrayOf(savedFile.absolutePath),
-            arrayOf(if (isAudioOnly) "audio/mpeg" else "video/mp4"),
-            null
-        )
-
-        savedFile
-    }
-
-    // Direct stream for In-App Player
     suspend fun extractDirectStreamUrl(targetUrl: String): String = getStreamUrl(targetUrl)
 
     fun fixUrl(input: String): String = sanitizeUrl(input)
