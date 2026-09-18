@@ -48,6 +48,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -672,6 +674,7 @@ fun HomeSearchScreen(
     var isLoading by remember { mutableStateOf(false) }
     var playingUrl by remember { mutableStateOf<String?>(null) }
 
+    var isSearchMode by remember { mutableStateOf(false) }
     var selectedMediaData by remember { mutableStateOf<ParsedMediaData?>(null) }
     var isInspecting by remember { mutableStateOf(false) }
 
@@ -751,22 +754,12 @@ fun HomeSearchScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Image(
-                        painter = painterResource(id = R.drawable.ic_app_logo_vector),
-                        contentDescription = "X TUBE Logo",
-                        modifier = Modifier
-                            .size(30.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "X TUBE",
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
+                Text(
+                    text = "X TUBE",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
                         onClick = { vm.toggleDarkMode() },
@@ -813,8 +806,8 @@ fun HomeSearchScreen(
                 }
             }
 
-        // When search results are present: Clean full search box top bar
-        if (searchResults.isNotEmpty()) {
+        // When search results are present OR search mode active: Clean full search box top bar
+        if (isSearchMode || searchResults.isNotEmpty()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -822,7 +815,10 @@ fun HomeSearchScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(
-                    onClick = { searchResults = emptyList() },
+                    onClick = { 
+                        searchResults = emptyList() 
+                        isSearchMode = false
+                    },
                     modifier = Modifier
                         .size(40.dp)
                         .testTag("btn_back_to_search")
@@ -861,6 +857,15 @@ fun HomeSearchScreen(
 
                         Spacer(modifier = Modifier.width(8.dp))
 
+                        val focusRequester = remember { FocusRequester() }
+                        LaunchedEffect(Unit) {
+                            if (isSearchMode && searchResults.isEmpty()) {
+                                try {
+                                    focusRequester.requestFocus()
+                                } catch (_: Exception) {}
+                            }
+                        }
+
                         BasicTextField(
                             value = searchInput,
                             onValueChange = { searchInput = it },
@@ -875,6 +880,7 @@ fun HomeSearchScreen(
                             keyboardActions = KeyboardActions(onSearch = { executeSearch(searchInput) }),
                             modifier = Modifier
                                 .weight(1f)
+                                .focusRequester(focusRequester)
                                 .testTag("top_search_input")
                         )
 
@@ -894,29 +900,141 @@ fun HomeSearchScreen(
                     }
                 }
             }
+
+            // Search History Section in Search Mode
+            if (searchResults.isEmpty() && searchHistory.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.History,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "Recent Searches",
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        TextButton(
+                            onClick = { vm.clearSearchHistory() },
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                            modifier = Modifier.height(28.dp).testTag("btn_clear_search_history")
+                        ) {
+                            Text(
+                                text = "Clear All",
+                                fontSize = 11.5.sp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(vertical = 2.dp)
+                    ) {
+                        items(searchHistory) { historyQuery ->
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                                modifier = Modifier.testTag("chip_search_history_$historyQuery")
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 4.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.clickable {
+                                            searchInput = historyQuery
+                                            executeSearch(historyQuery)
+                                        }
+                                    ) {
+                                        Text(
+                                            text = historyQuery,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(4.dp))
+
+                                    IconButton(
+                                        onClick = { vm.removeSearchQuery(historyQuery) },
+                                        modifier = Modifier
+                                            .size(20.dp)
+                                            .testTag("btn_remove_history_$historyQuery")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Remove search",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
         } else {
             // Search URL box (comfortable spacing)
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Small Style Search URL Box with "Paste URL & search"
-            SmallSearchUrlBox(
-                value = searchInput,
-                onValueChange = { searchInput = it },
-                onSearch = { executeSearch(searchInput) },
-                onPaste = {
-                    clipboard.getText()?.let { clipData ->
-                        val raw = clipData.text.toString().trim()
-                        val urlRegex = Regex("""(https?://[^\s]+)""")
-                        val fullUrl = urlRegex.find(raw)?.value ?: raw
-                        searchInput = fullUrl
-
-                        if (fullUrl.isNotBlank()) {
-                            executeSearch(fullUrl)
-                        }
+            // Box that intercepts clicks to enter search mode
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        isSearchMode = true
                     }
-                },
-                onClear = { searchInput = "" }
-            )
+            ) {
+                // Small Style Search URL Box with "Paste URL & search"
+                SmallSearchUrlBox(
+                    value = searchInput,
+                    onValueChange = { searchInput = it },
+                    onSearch = { isSearchMode = true },
+                    onPaste = {
+                        clipboard.getText()?.let { clipData ->
+                            val raw = clipData.text.toString().trim()
+                            val urlRegex = Regex("""(https?://[^\s]+)""")
+                            val fullUrl = urlRegex.find(raw)?.value ?: raw
+                            searchInput = fullUrl
+
+                            if (fullUrl.isNotBlank()) {
+                                isSearchMode = true
+                            }
+                        }
+                    },
+                    onClear = { searchInput = "" },
+                    readOnly = true
+                )
+            }
 
             // Search History Section (Save & Remove)
             if (searchHistory.isNotEmpty()) {
@@ -1957,33 +2075,23 @@ fun SettingsScreen(
             shape = RoundedCornerShape(18.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(16.dp)
             ) {
-                Image(
-                    painter = painterResource(id = R.drawable.ic_app_logo_vector),
-                    contentDescription = "X TUBE Logo",
-                    modifier = Modifier
-                        .size(46.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                Text(
+                    text = "X TUBE",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.primary
                 )
-                Spacer(modifier = Modifier.width(14.dp))
-                Column {
-                    Text(
-                        text = "X TUBE",
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = "High Performance Media Downloader",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "High Performance Media Downloader",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 
@@ -2592,46 +2700,35 @@ fun SettingsScreen(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
         ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Image(
-                    painter = painterResource(id = R.drawable.ic_app_logo_vector),
-                    contentDescription = "X TUBE Logo",
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "X TUBE Media Downloader",
-                    fontSize = 14.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "App Version v7.1.0 • Engine: $versionCode",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
+                Column {
+                    Text(
+                        text = "App Version v7.1.0",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Engine: $versionCode • Auto-Update: Daily",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
 
                 Button(
                     onClick = { showUpdateDialog = true },
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
                     modifier = Modifier.testTag("btn_settings_update_config")
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = null,
-                        modifier = Modifier.size(15.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Check Server Updates", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                    Text("Tap to Update", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -2725,7 +2822,7 @@ fun SettingsScreen(
                             }
                         }
                     },
-                    shape = RoundedCornerShape(50),
+                    shape = RoundedCornerShape(8.dp),
                     enabled = !isUpdatingEngineInSettings,
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                     modifier = Modifier.testTag("btn_confirm_server_update")

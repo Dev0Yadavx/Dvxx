@@ -101,32 +101,15 @@ fun SplashScreen(
             verticalArrangement = Arrangement.Center,
             modifier = Modifier.padding(24.dp)
         ) {
-            // Animated Brand Emblem
-            Box(
-                modifier = Modifier
-                    .size(110.dp)
-                    .scale(pulseScale)
-                    .clip(RoundedCornerShape(26.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                androidx.compose.foundation.Image(
-                    painter = androidx.compose.ui.res.painterResource(id = R.drawable.ic_app_logo_vector),
-                    contentDescription = "X TUBE Logo",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = androidx.compose.ui.layout.ContentScale.Fit
-                )
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Brand Typography
+            // Brand Typography (Text Only)
             Text(
                 text = "X TUBE",
-                fontSize = 42.sp,
+                fontSize = 44.sp,
                 fontFamily = androidx.compose.ui.text.font.FontFamily.Cursive,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
-                letterSpacing = 2.sp
+                letterSpacing = 2.sp,
+                modifier = Modifier.scale(pulseScale)
             )
         }
     }

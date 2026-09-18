@@ -33,7 +33,10 @@ object EngineInitState {
 
     fun ensureInitialized(context: Context? = null): Boolean {
         if (isInitialized) return true
-        val ctx = context?.applicationContext ?: appContext ?: return false
+        val ctx = context?.applicationContext
+            ?: appContext
+            ?: try { SealApp.instance.applicationContext } catch (_: Throwable) { null }
+            ?: return false
         setApplicationContext(ctx)
         synchronized(initLock) {
             if (isInitialized) return true
@@ -74,5 +77,42 @@ object EngineInitState {
         if (newVersion.isNotBlank()) {
             cachedVersion = newVersion
         }
+    }
+
+    @Volatile
+    private var isUpdatingEngine: Boolean = false
+
+    suspend fun checkAutoUpdateDaily(context: Context): Boolean = withContext(Dispatchers.IO) {
+        if (isUpdatingEngine) return@withContext false
+        val ctx = context.applicationContext
+        val prefs = ctx.getSharedPreferences("seal_auto_update_prefs", Context.MODE_PRIVATE)
+        val lastUpdate = prefs.getLong("last_auto_update_time", 0L)
+        val now = System.currentTimeMillis()
+        val oneDayMillis = 24 * 60 * 60 * 1000L // 24 hours daily check
+
+        // First launch: initialize timestamp to avoid heavy network/exec operations on first boot
+        if (lastUpdate == 0L) {
+            prefs.edit().putLong("last_auto_update_time", now).apply()
+            return@withContext false
+        }
+
+        if (now - lastUpdate >= oneDayMillis) {
+            isUpdatingEngine = true
+            try {
+                if (ensureInitialized(ctx)) {
+                    YoutubeDL.getInstance().updateYoutubeDL(ctx)
+                    val newVer = getOrFetchVersion(ctx, forceRefresh = true)
+                    setUpdatedVersion(newVer)
+                    prefs.edit().putLong("last_auto_update_time", now).apply()
+                    Log.d("EngineInitState", "Daily auto update completed: $newVer")
+                    return@withContext true
+                }
+            } catch (e: Exception) {
+                Log.w("EngineInitState", "Daily auto update skipped or failed: ${e.message}")
+            } finally {
+                isUpdatingEngine = false
+            }
+        }
+        return@withContext false
     }
 }

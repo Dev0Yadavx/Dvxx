@@ -113,10 +113,10 @@ class DownloadForegroundService : Service() {
                     processId = taskId
                 ) { progress, _ ->
                     val now = System.currentTimeMillis()
-                    // Throttle notification updates to avoid flooding Android system
+                    // Throttle notification updates (min 1000ms or 5% step) to prevent notification/audit log flooding
                     val progressInt = progress.toInt()
                     val lastInt = lastProgress.toInt()
-                    val shouldUpdateNotification = (now - lastNotificationUpdateTime > 400) || (progressInt != lastInt)
+                    val shouldUpdateNotification = (now - lastNotificationUpdateTime >= 1000L) || (progressInt - lastInt >= 5) || (progressInt == 100)
 
                     lastProgress = progress
 
@@ -278,8 +278,6 @@ class DownloadForegroundService : Service() {
         val isIndeterminate = progress <= 0f || progress > 100f
         val percentText = if (isIndeterminate) "Downloading..." else "$progressInt% • Downloading"
 
-        val coverBitmap = artCoverCache[taskId]
-
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_download)
             .setContentTitle(title)
@@ -296,10 +294,6 @@ class DownloadForegroundService : Service() {
                 cancelPendingIntent
             )
 
-        if (coverBitmap != null) {
-            builder.setLargeIcon(coverBitmap)
-        }
-
         return builder.build()
     }
 
@@ -315,18 +309,13 @@ class DownloadForegroundService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val coverBitmap = artCoverCache[taskId]
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_sys_download_done)
-            .setContentTitle("Download Complete")
-            .setContentText("$title (${formatFileSize(file.length())})")
+            .setSmallIcon(R.drawable.ic_notification_check)
+            .setContentTitle("✅ Download Complete")
+            .setContentText("✅ $title (${formatFileSize(file.length())})")
             .setContentIntent(contentPendingIntent)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-
-        if (coverBitmap != null) {
-            builder.setLargeIcon(coverBitmap)
-        }
 
         val notificationId = (System.currentTimeMillis() % 10000).toInt() + 2000
         val manager = getSystemService(NotificationManager::class.java)

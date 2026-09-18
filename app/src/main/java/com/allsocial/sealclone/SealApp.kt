@@ -20,15 +20,6 @@ class SealApp : Application() {
         instance = this
         EngineInitState.setApplicationContext(this)
 
-        // Initialize binaries in background to keep UI startup instant and avoid audit log flood
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                EngineInitState.ensureInitialized(this@SealApp)
-                Log.d("SealApp", "Engine initialization completed in background")
-            } catch (e: Exception) {
-                Log.e("SealApp", "Failed to initialize YoutubeDL engine: ${e.message}")
-            }
-        }
         createNotificationChannel()
     }
 

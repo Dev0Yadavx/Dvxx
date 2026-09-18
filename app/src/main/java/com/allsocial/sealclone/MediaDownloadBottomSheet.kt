@@ -129,7 +129,7 @@ fun DownloadOptionsSheet(
 
             Surface(
                 onClick = { onPlayStream(video.url) },
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(8.dp),
                 color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
                 modifier = Modifier.height(32.dp).testTag("btn_sheet_play_preview")
             ) {
@@ -154,12 +154,12 @@ fun DownloadOptionsSheet(
             }
         }
 
-        // Media Info Card
+        // Media Info Card (Square)
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 14.dp),
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(8.dp),
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
         ) {
@@ -174,7 +174,7 @@ fun DownloadOptionsSheet(
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .size(56.dp)
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(8.dp))
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                 }
@@ -200,150 +200,216 @@ fun DownloadOptionsSheet(
             }
         }
 
-        // ================= 1. MUSIC SECTION =================
+        // Square Mode Toggle: Video vs Audio
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(bottom = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(
-                text = "Music",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        val musicList = listOf(
-            Triple("128K", "Fast (128k)", "3.3 MB"),
-            Triple("192K", "Classic MP3 (192k)", "4.8 MB"),
-            Triple("320K", "HQ Audio (320k)", "9.2 MB")
-        )
-
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            musicList.forEach { (bitrate, label, size) ->
-                val isSelected = isAudio && selectedBitrate == bitrate
-                SheetQualityOptionRow(
-                    icon = Icons.Default.MusicNote,
-                    title = label,
-                    size = size,
-                    isSelected = isSelected,
-                    onClick = {
-                        isAudio = true
-                        selectedBitrate = bitrate
-                    },
-                    testTag = "btn_sheet_audio_$bitrate"
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        // ================= 2. VIDEO SECTION =================
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Video",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        val standardVideoList = listOf(
-            Triple(360, "Fast (360p)", "15.6 MB"),
-            Triple(480, "Standard (480p)", "28.4 MB"),
-            Triple(720, "High quality (720p)", "85.3 MB"),
-            Triple(1080, "Full HD (1080p)", "142.0 MB")
-        )
-
-        val extendedVideoList = listOf(
-            Triple(1440, "2K Quad HD (1440p)", "240.0 MB"),
-            Triple(2160, "4K Ultra HD (2160p)", "450.0 MB")
-        )
-
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            standardVideoList.forEach { (height, label, size) ->
-                val isSelected = !isAudio && selectedResolution == height
-                SheetQualityOptionRow(
-                    icon = Icons.Default.PlayArrow,
-                    title = label,
-                    size = size,
-                    isSelected = isSelected,
-                    onClick = {
-                        isAudio = false
-                        selectedResolution = height
-                    },
-                    testTag = "btn_sheet_video_$height"
-                )
-            }
-
-            AnimatedVisibility(
-                visible = showAllFormats,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+            if (!isAudio) {
+                Button(
+                    onClick = { isAudio = false },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp)
+                        .testTag("btn_sheet_toggle_video"),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
-                    extendedVideoList.forEach { (height, label, size) ->
-                        val isSelected = !isAudio && selectedResolution == height
-                        SheetQualityOptionRow(
-                            icon = Icons.Default.PlayArrow,
-                            title = label,
-                            size = size,
-                            isSelected = isSelected,
-                            onClick = {
-                                isAudio = false
-                                selectedResolution = height
-                            },
-                            testTag = "btn_sheet_video_$height"
-                        )
-                    }
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Video (MP4)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+            } else {
+                OutlinedButton(
+                    onClick = { isAudio = false },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp)
+                        .testTag("btn_sheet_toggle_video"),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Video (MP4)", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                 }
             }
 
-            // More formats row toggle
+            if (isAudio) {
+                Button(
+                    onClick = { isAudio = true },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp)
+                        .testTag("btn_sheet_toggle_audio"),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(Icons.Default.MusicNote, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Music (MP3)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+            } else {
+                OutlinedButton(
+                    onClick = { isAudio = true },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp)
+                        .testTag("btn_sheet_toggle_audio"),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Icon(Icons.Default.MusicNote, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Music (MP3)", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                }
+            }
+        }
+
+        // Clean UI: Only the selected quality area is shown!
+        if (isAudio) {
+            // ================= 1. MUSIC SECTION ONLY =================
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .clickable { showAllFormats = !showAllFormats }
-                    .padding(vertical = 6.dp, horizontal = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                    .padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "More formats",
+                    text = "Select Audio Quality",
+                    color = MaterialTheme.colorScheme.primary,
                     fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontWeight = FontWeight.Bold
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            }
+
+            val musicList = listOf(
+                Triple("320K", "HQ Audio (320k)", "9.2 MB"),
+                Triple("192K", "Classic MP3 (192k)", "4.8 MB"),
+                Triple("128K", "Fast (128k)", "3.3 MB")
+            )
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                musicList.forEach { (bitrate, label, size) ->
+                    val isSelected = selectedBitrate == bitrate
+                    SheetQualityOptionRow(
+                        icon = Icons.Default.MusicNote,
+                        title = label,
+                        size = size,
+                        isSelected = isSelected,
+                        onClick = {
+                            selectedBitrate = bitrate
+                        },
+                        testTag = "btn_sheet_audio_$bitrate"
+                    )
+                }
+            }
+        } else {
+            // ================= 2. VIDEO SECTION ONLY =================
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Select Video Resolution",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            val standardVideoList = listOf(
+                Triple(360, "Fast (360p)", "15.6 MB"),
+                Triple(480, "Standard (480p)", "28.4 MB"),
+                Triple(720, "High quality (720p)", "85.3 MB"),
+                Triple(1080, "Full HD (1080p)", "142.0 MB")
+            )
+
+            val extendedVideoList = listOf(
+                Triple(1440, "2K Quad HD (1440p)", "240.0 MB"),
+                Triple(2160, "4K Ultra HD (2160p)", "450.0 MB")
+            )
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                standardVideoList.forEach { (height, label, size) ->
+                    val isSelected = selectedResolution == height
+                    SheetQualityOptionRow(
+                        icon = Icons.Default.PlayArrow,
+                        title = label,
+                        size = size,
+                        isSelected = isSelected,
+                        onClick = {
+                            selectedResolution = height
+                        },
+                        testTag = "btn_sheet_video_$height"
+                    )
+                }
+
+                AnimatedVisibility(
+                    visible = showAllFormats,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        extendedVideoList.forEach { (height, label, size) ->
+                            val isSelected = selectedResolution == height
+                            SheetQualityOptionRow(
+                                icon = Icons.Default.PlayArrow,
+                                title = label,
+                                size = size,
+                                isSelected = isSelected,
+                                onClick = {
+                                    selectedResolution = height
+                                },
+                                testTag = "btn_sheet_video_$height"
+                            )
+                        }
+                    }
+                }
+
+                // More formats row toggle (Square)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { showAllFormats = !showAllFormats }
+                        .padding(vertical = 6.dp, horizontal = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(
-                        text = if (showAllFormats) "Collapse" else "All",
+                        text = "More formats",
                         fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Icon(
-                        imageVector = if (showAllFormats) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp)
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = if (showAllFormats) "Collapse" else "All",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Icon(
+                            imageVector = if (showAllFormats) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
         }
@@ -371,7 +437,7 @@ fun DownloadOptionsSheet(
                 .fillMaxWidth()
                 .height(54.dp)
                 .testTag("btn_sheet_download_confirm"),
-            shape = RoundedCornerShape(28.dp),
+            shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary
@@ -424,7 +490,7 @@ private fun SheetQualityOptionRow(
             .fillMaxWidth()
             .clickable { onClick() }
             .testTag(testTag),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(8.dp),
         color = if (isSelected) {
             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
         } else {
@@ -449,7 +515,7 @@ private fun SheetQualityOptionRow(
                 Box(
                     modifier = Modifier
                         .size(34.dp)
-                        .clip(CircleShape)
+                        .clip(RoundedCornerShape(6.dp))
                         .background(
                             if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
                         ),
@@ -486,7 +552,7 @@ private fun SheetQualityOptionRow(
                 Box(
                     modifier = Modifier
                         .size(20.dp)
-                        .clip(CircleShape)
+                        .clip(RoundedCornerShape(4.dp))
                         .background(
                             if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
                         ),
@@ -501,7 +567,7 @@ private fun SheetQualityOptionRow(
                         )
                     } else {
                         Surface(
-                            shape = CircleShape,
+                            shape = RoundedCornerShape(4.dp),
                             border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.outlineVariant),
                             color = Color.Transparent,
                             modifier = Modifier.size(18.dp)

@@ -192,7 +192,7 @@ fun DownloadPopupDialog(
                 indication = null,
                 onClick = onDismiss
             )
-            .padding(horizontal = 16.dp, vertical = 24.dp),
+            .padding(horizontal = 20.dp, vertical = 16.dp),
         contentAlignment = Alignment.Center
     ) {
         AnimatedVisibility(
@@ -202,31 +202,32 @@ fun DownloadPopupDialog(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .widthIn(max = 420.dp)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
                         onClick = { /* Do nothing */ }
                     )
                     .testTag("card_download_popup"),
-                shape = RoundedCornerShape(28.dp),
+                shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 14.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(20.dp)
+                        .padding(horizontal = 16.dp, vertical = 14.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
-                    // Header: "Download video as" & Close
+                    // Header: "Quick Download" & Close
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Download video as",
-                            fontSize = 18.sp,
+                            text = "Quick Download",
+                            fontSize = 16.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -234,30 +235,31 @@ fun DownloadPopupDialog(
                         IconButton(
                             onClick = onDismiss,
                             modifier = Modifier
-                                .size(32.dp)
+                                .size(28.dp)
                                 .testTag("btn_close_download_popup")
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Close,
                                 contentDescription = "Close",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                    // Media Info Card
+                    // Media Info Card (Compact)
                     Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(10.dp),
+                                .padding(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             val thumb = parsedMedia?.thumbnail ?: ""
@@ -267,20 +269,20 @@ fun DownloadPopupDialog(
                                     contentDescription = "Thumbnail",
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier
-                                        .size(56.dp)
-                                        .clip(RoundedCornerShape(12.dp))
+                                        .size(40.dp)
+                                        .clip(RoundedCornerShape(6.dp))
                                 )
                             } else {
                                 Box(
                                     modifier = Modifier
-                                        .size(56.dp)
-                                        .clip(RoundedCornerShape(12.dp))
+                                        .size(40.dp)
+                                        .clip(RoundedCornerShape(6.dp))
                                         .background(MaterialTheme.colorScheme.surfaceVariant),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     if (isLoadingInfo) {
                                         CircularProgressIndicator(
-                                            modifier = Modifier.size(22.dp),
+                                            modifier = Modifier.size(18.dp),
                                             strokeWidth = 2.dp,
                                             color = MaterialTheme.colorScheme.primary
                                         )
@@ -288,13 +290,14 @@ fun DownloadPopupDialog(
                                         Icon(
                                             imageVector = Icons.Default.PlayArrow,
                                             contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(18.dp)
                                         )
                                     }
                                 }
                             }
 
-                            Spacer(modifier = Modifier.width(12.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
 
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
@@ -302,13 +305,13 @@ fun DownloadPopupDialog(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     fontWeight = FontWeight.SemiBold,
-                                    fontSize = 13.5.sp,
+                                    fontSize = 12.5.sp,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
-                                Spacer(modifier = Modifier.height(2.dp))
+                                Spacer(modifier = Modifier.height(1.dp))
                                 Text(
                                     text = "${parsedMedia?.uploader ?: "Media"} • Duration: ${parsedMedia?.duration ?: "--:--"}",
-                                    fontSize = 11.5.sp,
+                                    fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.primary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
@@ -317,25 +320,108 @@ fun DownloadPopupDialog(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                    // 1. Music Section
-                    Text(
-                        text = "Music",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
+                    // Square Mode Toggle: Video vs Audio (Shows only 1 section at a time, drastically reducing height)
+                    var isAudioSelected by remember { mutableStateOf(false) }
 
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (!isAudioSelected) {
+                            Button(
+                                onClick = {
+                                    isAudioSelected = false
+                                    val vid = standardVideoOptions.firstOrNull()
+                                    if (vid != null) selectedOption = vid
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(38.dp)
+                                    .testTag("btn_quick_toggle_video"),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
+                                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text("Video (MP4)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        } else {
+                            OutlinedButton(
+                                onClick = {
+                                    isAudioSelected = false
+                                    val vid = standardVideoOptions.firstOrNull()
+                                    if (vid != null) selectedOption = vid
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(38.dp)
+                                    .testTag("btn_quick_toggle_video"),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
+                                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(15.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text("Video (MP4)", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                            }
+                        }
+
+                        if (isAudioSelected) {
+                            Button(
+                                onClick = {
+                                    isAudioSelected = true
+                                    val aud = audioOptions.firstOrNull()
+                                    if (aud != null) selectedOption = aud
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(38.dp)
+                                    .testTag("btn_quick_toggle_audio"),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
+                                Icon(Icons.Default.MusicNote, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text("Music (MP3)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        } else {
+                            OutlinedButton(
+                                onClick = {
+                                    isAudioSelected = true
+                                    val aud = audioOptions.firstOrNull()
+                                    if (aud != null) selectedOption = aud
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(38.dp)
+                                    .testTag("btn_quick_toggle_audio"),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
+                                Icon(Icons.Default.MusicNote, contentDescription = null, modifier = Modifier.size(15.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text("Music (MP3)", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                            }
+                        }
+                    }
+
+                    // Quality Options (Only shows the active category to keep height compact)
                     Column(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
-                        audioOptions.forEach { opt ->
+                        val currentOptions = if (isAudioSelected) audioOptions else standardVideoOptions
+                        currentOptions.forEach { opt ->
                             val isSelected = selectedOption.id == opt.id
                             PopupQualityRow(
-                                icon = Icons.Default.MusicNote,
+                                icon = if (isAudioSelected) Icons.Default.MusicNote else Icons.Default.PlayArrow,
                                 title = opt.title,
                                 size = opt.estSize,
                                 isSelected = isSelected,
@@ -346,34 +432,7 @@ fun DownloadPopupDialog(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // 2. Video Section
-                    Text(
-                        text = "Video",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        standardVideoOptions.forEach { opt ->
-                            val isSelected = selectedOption.id == opt.id
-                            PopupQualityRow(
-                                icon = Icons.Default.PlayArrow,
-                                title = opt.title,
-                                size = opt.estSize,
-                                isSelected = isSelected,
-                                onClick = { selectedOption = opt }
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(20.dp))
-
-                    // Download Action Button
+                    // Download Action Button (Compact & Square)
                     var isDownloading by remember { mutableStateOf(false) }
 
                     Button(
@@ -391,39 +450,38 @@ fun DownloadPopupDialog(
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(54.dp)
+                            .height(44.dp)
                             .testTag("btn_start_download_popup"),
-                        shape = RoundedCornerShape(28.dp),
+                        shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
                             contentColor = MaterialTheme.colorScheme.onPrimary
-                        ),
-                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
+                        )
                     ) {
                         if (isDownloading) {
                             CircularProgressIndicator(
-                                modifier = Modifier.size(22.dp),
+                                modifier = Modifier.size(18.dp),
                                 color = MaterialTheme.colorScheme.onPrimary,
-                                strokeWidth = 2.8.dp,
+                                strokeWidth = 2.2.dp,
                                 trackColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f)
                             )
-                            Spacer(modifier = Modifier.width(10.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "Starting...",
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 16.sp
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
                             )
                         } else {
                             Icon(
                                 imageVector = Icons.Default.Download,
                                 contentDescription = "Download",
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Download",
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 16.sp
+                                text = "Download ${selectedOption.label}",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
                             )
                         }
                     }
@@ -445,21 +503,21 @@ private fun PopupQualityRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() },
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(8.dp),
         color = if (isSelected) {
             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
         } else {
             MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
         },
         border = BorderStroke(
-            width = if (isSelected) 1.8.dp else 1.dp,
+            width = if (isSelected) 1.5.dp else 1.dp,
             color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)
         )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = 10.dp, vertical = 7.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -469,8 +527,8 @@ private fun PopupQualityRow(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(32.dp)
-                        .clip(CircleShape)
+                        .size(26.dp)
+                        .clip(RoundedCornerShape(6.dp))
                         .background(
                             if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
                         ),
@@ -480,16 +538,16 @@ private fun PopupQualityRow(
                         imageVector = icon,
                         contentDescription = null,
                         tint = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(14.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(8.dp))
 
                 Text(
                     text = title,
                     color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                    fontSize = 13.5.sp,
+                    fontSize = 12.5.sp,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                 )
             }
@@ -498,16 +556,16 @@ private fun PopupQualityRow(
                 Text(
                     text = size,
                     color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.5.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold
                 )
 
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(8.dp))
 
                 Box(
                     modifier = Modifier
-                        .size(18.dp)
-                        .clip(CircleShape)
+                        .size(16.dp)
+                        .clip(RoundedCornerShape(4.dp))
                         .background(
                             if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
                         ),
@@ -518,14 +576,14 @@ private fun PopupQualityRow(
                             imageVector = Icons.Default.Check,
                             contentDescription = "Selected",
                             tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(12.dp)
+                            modifier = Modifier.size(11.dp)
                         )
                     } else {
                         Surface(
-                            shape = CircleShape,
-                            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.outlineVariant),
+                            shape = RoundedCornerShape(4.dp),
+                            border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.outlineVariant),
                             color = Color.Transparent,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(14.dp)
                         ) {}
                     }
                 }

@@ -65,6 +65,7 @@ fun SmallSearchUrlBox(
     onPaste: () -> Unit = onPasteClick,
     onClear: () -> Unit = { onValueChange("") },
     placeholder: String = "Paste URL & search",
+    readOnly: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val actualPaste = if (onPaste != onPasteClick && onPaste != {}) onPaste else onPasteClick
@@ -132,6 +133,8 @@ fun SmallSearchUrlBox(
                         value = value,
                         onValueChange = onValueChange,
                         singleLine = true,
+                        readOnly = readOnly,
+                        enabled = !readOnly,
                         textStyle = TextStyle(
                             fontSize = 13.5.sp,
                             color = MaterialTheme.colorScheme.onSurface,
