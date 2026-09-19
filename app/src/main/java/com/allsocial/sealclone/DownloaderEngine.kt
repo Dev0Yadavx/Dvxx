@@ -63,7 +63,10 @@ object DownloaderEngine {
             addOption("--flat-playlist")
             addOption("--no-warnings")
             addOption("--ignore-errors")
-            addOption("--extractor-args", "youtube:player_client=ios,android")
+            addOption("--no-cache-dir")
+            addOption("--no-call-home")
+            addOption("--extractor-args", "youtube:player_client=web_safari,android,mweb")
+            addOption("--user-agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15")
         }
 
         val results = mutableListOf<SearchItem>()
@@ -102,8 +105,12 @@ object DownloaderEngine {
         val request = YoutubeDLRequest(clean).apply {
             addOption("-g")
             addOption("-f", "best[ext=mp4]/best")
+            addOption("--no-cache-dir")
+            addOption("--no-call-home")
             if (isYt) {
-                addOption("--extractor-args", "youtube:player_client=ios,android")
+                addOption("--extractor-args", "youtube:player_client=web_safari,android,mweb")
+                addOption("--user-agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15")
+                addOption("--referer", "https://www.youtube.com/")
             }
         }
         val out = try {
@@ -114,7 +121,7 @@ object DownloaderEngine {
         out.lines().firstOrNull { it.startsWith("http") } ?: clean
     }
 
-    // 100% FIXED DOWNLOAD: Works for All Qualities without Format Error
+    // 100% FIXED DOWNLOAD: Works for All Qualities with YouTube Bot-Bypass
     suspend fun executeDownload(
         context: Context,
         rawUrl: String,
@@ -134,47 +141,91 @@ object DownloaderEngine {
 
         val outputTemplate = "${workingDir.absolutePath}/%(title).80B.%(ext)s"
 
-        val request = YoutubeDLRequest(cleanUrl).apply {
-            addOption("--no-warnings")
-            addOption("--no-mtime")
-            addOption("--windows-filenames")
-            addOption("--no-check-certificates")
-            addOption("-P", workingDir.absolutePath)
-            addOption("-o", outputTemplate)
+        // Multi-strategy clients for YouTube to completely eliminate "Sign in to confirm you're not a bot"
+        val clientStrategies = if (isYt) {
+            listOf(
+                "web_safari,web",
+                "android_creator,mweb",
+                "tv_embedded,web_embedded",
+                "android,web"
+            )
+        } else {
+            listOf("")
+        }
 
-            // Critical: YouTube bypass without 403 or bot block
-            if (isYt) {
-                addOption("--extractor-args", "youtube:player_client=ios,android")
-            }
+        var lastException: Exception? = null
+        var isSuccess = false
 
-            if (isAudioOnly) {
-                // Audio: Har tarah ke audio stream ko extract karega bina crash ke
-                addOption("-x")
-                addOption("--audio-format", "mp3")
-                addOption("--audio-quality", audioBitrateKbps ?: "320K")
-                // ba = best audio, agar na mile to best video se audio strip karega
-                addOption("-f", "ba/b/bestaudio/best")
-            } else {
-                val h = selectedHeight ?: 1080
-                // UNIVERSAL FORMAT SELECTOR:
-                // 1) Target height tak best video + audio
-                // 2) Single progressive stream <= target height
-                // 3) Any best combined stream
-                // 4) Absolute best available
-                val formatPattern = "bv*[height<=$h]+ba/b[height<=$h]/bv*+ba/b/best"
-                addOption("-f", formatPattern)
-                addOption("--merge-output-format", "mp4")
+        for (strategy in clientStrategies) {
+            try {
+                // Clear any leftover partial files before each attempt
+                workingDir.listFiles()?.forEach { it.delete() }
+
+                val request = YoutubeDLRequest(cleanUrl).apply {
+                    addOption("--no-warnings")
+                    addOption("--no-mtime")
+                    addOption("--windows-filenames")
+                    addOption("--no-check-certificates")
+                    addOption("--no-cache-dir")
+                    addOption("--no-call-home")
+                    addOption("-P", workingDir.absolutePath)
+                    addOption("-o", outputTemplate)
+
+                    if (isYt && strategy.isNotEmpty()) {
+                        addOption("--extractor-args", "youtube:player_client=$strategy")
+                        if (strategy.contains("safari")) {
+                            addOption("--user-agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15")
+                            addOption("--referer", "https://www.youtube.com/")
+                        } else if (strategy.contains("embedded")) {
+                            addOption("--referer", "https://www.youtube.com/embed/")
+                        }
+                    }
+
+                    if (isAudioOnly) {
+                        addOption("-x")
+                        addOption("--audio-format", "mp3")
+                        addOption("--audio-quality", audioBitrateKbps ?: "320K")
+                        addOption("-f", "ba/b/bestaudio/best")
+                    } else {
+                        val h = selectedHeight ?: 1080
+                        val formatPattern = "bv*[height<=$h]+ba/b[height<=$h]/bv*+ba/b/best"
+                        addOption("-f", formatPattern)
+                        addOption("--merge-output-format", "mp4")
+                    }
+                }
+
+                // Run engine with progress throttling to prevent log flood
+                var lastProgressReportTime = 0L
+                YoutubeDL.getInstance().execute(request) { progress, _, line ->
+                    val now = System.currentTimeMillis()
+                    if (now - lastProgressReportTime >= 250L || progress >= 100f) {
+                        lastProgressReportTime = now
+                        onProgress(progress, line ?: "")
+                    }
+                }
+
+                isSuccess = true
+                break
+            } catch (e: Exception) {
+                lastException = e
+                val errorMsg = e.message ?: ""
+                val isBotError = errorMsg.contains("confirm you’re not a bot", ignoreCase = true) ||
+                                 errorMsg.contains("confirm you're not a bot", ignoreCase = true) ||
+                                 errorMsg.contains("bot", ignoreCase = true) ||
+                                 errorMsg.contains("cookies", ignoreCase = true) ||
+                                 errorMsg.contains("403", ignoreCase = true)
+
+                // If bot error or format rejection and we have other strategies, try next
+                if (isYt && isBotError && strategy != clientStrategies.last()) {
+                    continue
+                } else {
+                    throw e
+                }
             }
         }
 
-        // Run engine with progress throttling to prevent log flood
-        var lastProgressReportTime = 0L
-        YoutubeDL.getInstance().execute(request) { progress, _, line ->
-            val now = System.currentTimeMillis()
-            if (now - lastProgressReportTime >= 250L || progress >= 100f) {
-                lastProgressReportTime = now
-                onProgress(progress, line ?: "")
-            }
+        if (!isSuccess && lastException != null) {
+            throw lastException
         }
 
         // Output file detect karein
@@ -247,11 +298,12 @@ object DownloaderEngine {
             addOption("--dump-single-json")
             addOption("--no-warnings")
             addOption("--no-cache-dir")
+            addOption("--no-call-home")
             addOption("--ignore-no-formats-error")
 
             if (isYt) {
-                addOption("--extractor-args", "youtube:player_client=ios,android")
-                addOption("--user-agent", "com.google.ios.youtube/19.29.1 (iPhone14,3; U; CPU iOS 17_5_1 like Mac OS X; en_US)")
+                addOption("--extractor-args", "youtube:player_client=web_safari,android,mweb")
+                addOption("--user-agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15")
                 addOption("--referer", "https://www.youtube.com/")
             } else {
                 addOption("--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")

@@ -170,13 +170,14 @@ class DownloadForegroundService : Service() {
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "Download error: ${e.message}", e)
-                showFailureNotification(taskId, title, e.message ?: "Download failed")
+                val friendlyError = formatUserFriendlyError(e.message)
+                showFailureNotification(taskId, title, friendlyError)
                 _downloadEvents.emit(
                     DownloadEvent(
                         taskId = taskId,
                         title = title,
                         isSuccess = false,
-                        error = e.message ?: "Download failed"
+                        error = friendlyError
                     )
                 )
             } finally {
@@ -320,6 +321,21 @@ class DownloadForegroundService : Service() {
         val notificationId = (System.currentTimeMillis() % 10000).toInt() + 2000
         val manager = getSystemService(NotificationManager::class.java)
         manager.notify(notificationId, builder.build())
+    }
+
+    private fun formatUserFriendlyError(raw: String?): String {
+        if (raw == null) return "Download failed"
+        return when {
+            raw.contains("confirm you’re not a bot", ignoreCase = true) ||
+            raw.contains("confirm you're not a bot", ignoreCase = true) ||
+            raw.contains("Sign in to confirm", ignoreCase = true) ->
+                "YouTube bot check: Network flagged. Try switching Wi-Fi/Mobile network or disable VPN."
+            raw.contains("HTTP Error 403", ignoreCase = true) ->
+                "HTTP 403: Stream link expired or forbidden by server. Please retry."
+            raw.contains("Requested format is not available", ignoreCase = true) ->
+                "Format unavailable. Please select another quality or MP3."
+            else -> raw.lines().firstOrNull { it.isNotBlank() }?.take(100) ?: "Download failed"
+        }
     }
 
     private fun showFailureNotification(taskId: String, title: String, error: String) {
